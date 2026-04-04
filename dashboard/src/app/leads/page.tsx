@@ -150,22 +150,23 @@ export default function LeadsPage() {
         <div className="absolute inset-0 bg-gradient-to-br from-indigo-600/10 via-transparent to-orange-500/5" />
         <div className="absolute top-0 left-1/4 w-96 h-96 bg-indigo-600/5 rounded-full blur-3xl" />
 
-        <div className="relative px-6 py-6">
-          <div className="flex items-center justify-between mb-6">
+        <div className="relative px-4 sm:px-6 py-6 pt-16 lg:pt-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
             <div>
-              <h1 className="text-3xl font-bold text-zinc-100">База лидов</h1>
-              <p className="text-zinc-400 mt-1">
-                Управление потенциальными клиентами
+              <h1 className="text-2xl sm:text-3xl font-bold text-zinc-100">База лидов</h1>
+              <p className="text-zinc-400 mt-1 text-sm sm:text-base">
+                Управление базой потенциальных клиентов
               </p>
             </div>
-            <div className="flex items-center gap-3">
-              <Button variant="outline" className="gap-2">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <Button variant="outline" className="gap-2" size="sm">
                 <Download className="h-4 w-4" />
-                Экспорт
+                <span className="hidden sm:inline">Экспорт</span>
               </Button>
               <Button
                 onClick={() => setDiscoveryOpen(true)}
                 className="gap-2 bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 shadow-lg shadow-indigo-500/25"
+                size="sm"
               >
                 <Rocket className="h-4 w-4" />
                 Discovery
@@ -174,76 +175,79 @@ export default function LeadsPage() {
           </div>
 
           {/* Search & Filters */}
-          <div className="flex flex-wrap gap-3">
-            <div className="relative flex-1 min-w-[240px]">
+          <div className="flex flex-col sm:flex-row flex-wrap gap-3">
+            <div className="relative flex-1 min-w-0 sm:min-w-[240px]">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
               <Input
-                placeholder="Поиск по названию компании..."
+                placeholder="Поиск по компании..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-9 bg-zinc-900/50 border-zinc-700"
               />
             </div>
 
-            <Select value={status} onValueChange={setStatus}>
-              <SelectTrigger className="w-[160px] bg-zinc-900/50 border-zinc-700">
-                <SelectValue placeholder="Статус" />
-              </SelectTrigger>
-              <SelectContent>
-                {STATUSES.map((s) => (
-                  <SelectItem key={s.value} value={s.value}>
-                    {s.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="flex flex-wrap gap-2 sm:gap-3">
+              <Select value={status} onValueChange={setStatus}>
+                <SelectTrigger className="w-[130px] sm:w-[160px] bg-zinc-900/50 border-zinc-700">
+                  <SelectValue placeholder="Статус" />
+                </SelectTrigger>
+                <SelectContent>
+                  {STATUSES.map((s) => (
+                    <SelectItem key={s.value} value={s.value}>
+                      {s.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
 
-            <Select value={industry} onValueChange={setIndustry}>
-              <SelectTrigger className="w-[160px] bg-zinc-900/50 border-zinc-700">
-                <SelectValue placeholder="Отрасль" />
-              </SelectTrigger>
-              <SelectContent>
-                {INDUSTRIES.map((i) => (
-                  <SelectItem key={i.value} value={i.value}>
-                    {i.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              <Select value={industry} onValueChange={setIndustry}>
+                <SelectTrigger className="w-[130px] sm:w-[160px] bg-zinc-900/50 border-zinc-700">
+                  <SelectValue placeholder="Отрасль" />
+                </SelectTrigger>
+                <SelectContent>
+                  {INDUSTRIES.map((i) => (
+                    <SelectItem key={i.value} value={i.value}>
+                      {i.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
 
-            <Select value={city} onValueChange={setCity}>
-              <SelectTrigger className="w-[160px] bg-zinc-900/50 border-zinc-700">
-                <SelectValue placeholder="Город" />
-              </SelectTrigger>
-              <SelectContent>
-                {CITIES.map((c) => (
-                  <SelectItem key={c.value} value={c.value}>
-                    {c.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              <Select value={city} onValueChange={setCity}>
+                <SelectTrigger className="w-[130px] sm:w-[160px] bg-zinc-900/50 border-zinc-700">
+                  <SelectValue placeholder="Город" />
+                </SelectTrigger>
+                <SelectContent>
+                  {CITIES.map((c) => (
+                    <SelectItem key={c.value} value={c.value}>
+                      {c.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
 
-            <Button
-              variant={showFilters ? "secondary" : "outline"}
-              onClick={() => setShowFilters(!showFilters)}
-              className="gap-2"
-            >
-              <SlidersHorizontal className="h-4 w-4" />
-              Фильтры
-              {activeFiltersCount > 0 && (
-                <Badge variant="secondary" className="ml-1">
-                  {activeFiltersCount}
-                </Badge>
-              )}
-            </Button>
-
-            {activeFiltersCount > 0 && (
-              <Button variant="ghost" onClick={clearFilters} className="gap-2">
-                <X className="h-4 w-4" />
-                Сбросить
+              <Button
+                variant={showFilters ? "secondary" : "outline"}
+                onClick={() => setShowFilters(!showFilters)}
+                className="gap-2"
+                size="sm"
+              >
+                <SlidersHorizontal className="h-4 w-4" />
+                <span className="hidden sm:inline">Фильтры</span>
+                {activeFiltersCount > 0 && (
+                  <Badge variant="secondary" className="ml-1">
+                    {activeFiltersCount}
+                  </Badge>
+                )}
               </Button>
-            )}
+
+              {activeFiltersCount > 0 && (
+                <Button variant="ghost" onClick={clearFilters} className="gap-2" size="sm">
+                  <X className="h-4 w-4" />
+                  <span className="hidden sm:inline">Сбросить</span>
+                </Button>
+              )}
+            </div>
           </div>
 
           {/* Extended Filters */}
@@ -288,9 +292,9 @@ export default function LeadsPage() {
       </div>
 
       {/* Content */}
-      <div className="p-6">
+      <div className="p-4 sm:p-6">
         {/* Stats Bar */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
           <div className="flex items-center gap-4">
             {data && (
               <div className="flex items-center gap-2">
@@ -314,14 +318,14 @@ export default function LeadsPage() {
 
         {/* Leads Grid */}
         {isLoading ? (
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <div className="grid gap-4 sm:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
               <Skeleton key={i} className="h-64 rounded-2xl" />
             ))}
           </div>
         ) : data?.items?.length ? (
           <>
-            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            <div className="grid gap-4 sm:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {data.items.map((lead) => {
                 const isSelected = selectedLeads.includes(lead.id)
 
@@ -363,14 +367,14 @@ export default function LeadsPage() {
                         )}
                       </div>
 
-                      <CardContent className="relative p-5">
+                      <CardContent className="relative p-4 sm:p-5">
                         {/* Company Icon & Name */}
-                        <div className="flex items-start gap-4 mb-4">
-                          <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-600/20 to-orange-500/20 group-hover:from-indigo-600/30 group-hover:to-orange-500/30 transition-all">
-                            <Building2 className="h-7 w-7 text-indigo-400" />
+                        <div className="flex items-start gap-3 sm:gap-4 mb-4">
+                          <div className="flex h-12 w-12 sm:h-14 sm:w-14 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-600/20 to-orange-500/20 group-hover:from-indigo-600/30 group-hover:to-orange-500/30 transition-all">
+                            <Building2 className="h-6 w-6 sm:h-7 sm:w-7 text-indigo-400" />
                           </div>
                           <div className="flex-1 min-w-0 pr-6">
-                            <h3 className="font-bold text-lg text-zinc-100 truncate group-hover:text-indigo-400 transition-colors">
+                            <h3 className="font-bold text-base sm:text-lg text-zinc-100 break-words group-hover:text-indigo-400 transition-colors">
                               {lead.company_name}
                             </h3>
                             <StatusBadge status={lead.status} />
@@ -378,25 +382,25 @@ export default function LeadsPage() {
                         </div>
 
                         {/* Info Grid */}
-                        <div className="space-y-3 mb-4">
+                        <div className="space-y-2 sm:space-y-3 mb-4">
                           <div className="flex items-center gap-3 text-sm">
-                            <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-zinc-800/50">
+                            <div className="flex items-center justify-center h-8 w-8 flex-shrink-0 rounded-lg bg-zinc-800/50">
                               <Briefcase className="h-4 w-4 text-zinc-400" />
                             </div>
-                            <span className="text-zinc-300 truncate">{lead.industry || "Не указано"}</span>
+                            <span className="text-zinc-300 break-words">{lead.industry || "Не указано"}</span>
                           </div>
                           <div className="flex items-center gap-3 text-sm">
-                            <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-zinc-800/50">
+                            <div className="flex items-center justify-center h-8 w-8 flex-shrink-0 rounded-lg bg-zinc-800/50">
                               <MapPin className="h-4 w-4 text-zinc-400" />
                             </div>
                             <span className="text-zinc-300">{lead.city || "Не указан"}</span>
                           </div>
                           {lead.contacts?.[0] && (
                             <div className="flex items-center gap-3 text-sm">
-                              <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-zinc-800/50">
+                              <div className="flex items-center justify-center h-8 w-8 flex-shrink-0 rounded-lg bg-zinc-800/50">
                                 <Users className="h-4 w-4 text-zinc-400" />
                               </div>
-                              <span className="text-zinc-300 truncate">{lead.contacts[0].name}</span>
+                              <span className="text-zinc-300 break-words">{lead.contacts[0].name}</span>
                             </div>
                           )}
                         </div>

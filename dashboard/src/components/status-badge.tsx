@@ -24,7 +24,9 @@ interface StatusBadgeProps {
 }
 
 export function StatusBadge({ status }: StatusBadgeProps) {
-  const config = statusConfig[status] || { label: status, variant: "secondary" as const }
+  // Normalize status to uppercase for lookup (API may return lowercase like "lead_found")
+  const normalizedStatus = status?.toUpperCase() || ""
+  const config = statusConfig[normalizedStatus] || { label: status || "Неизвестно", variant: "secondary" as const }
 
   return <Badge variant={config.variant}>{config.label}</Badge>
 }
