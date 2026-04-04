@@ -184,7 +184,6 @@ class ContactRepository:
         Args:
             contact_id: Contact UUID
         """
-        from datetime import datetime, timezone
         await self.session.execute(
             update(EmployerContactDB)
             .where(EmployerContactDB.id == contact_id)

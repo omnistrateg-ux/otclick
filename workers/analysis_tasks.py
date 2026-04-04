@@ -4,6 +4,7 @@
 """
 
 import logging
+from datetime import datetime, timezone
 from typing import Any
 
 from celery import shared_task
@@ -12,6 +13,9 @@ from app.events.definitions import EventType, create_event
 from app.models.enums import LeadStatus
 from app.orchestrator.engine import LeadOrchestrator
 from workers.celery_app import celery_app
+
+# Python 3.10 compatibility
+UTC = timezone.utc
 
 logger = logging.getLogger(__name__)
 
@@ -57,8 +61,8 @@ def analyze_reply(
             if not email:
                 return {"success": False, "error": "Email not found"}
 
-            lead_id = lead_id or email.lead_id
-            lead = await lead_repo.get(lead_id)
+            lead_id_resolved = lead_id or email.lead_id
+            lead = await lead_repo.get(lead_id_resolved)
             if not lead:
                 return {"success": False, "error": "Lead not found"}
 
@@ -83,7 +87,7 @@ def analyze_reply(
                 agent_name="response",
                 input_data={
                     "email_id": email_id,
-                    "lead_id": lead_id,
+                    "lead_id": lead_id_resolved,
                     "reply_text": reply_text,
                 },
             )
@@ -96,19 +100,19 @@ def analyze_reply(
 
                 # Trigger qualification
                 qualify_lead.delay(
-                    lead_id=lead_id,
+                    lead_id=lead_id_resolved,
                     intent=intent,
                     confidence=confidence,
                 )
 
                 logger.info(
-                    f"Analyzed reply for lead {lead_id}: "
+                    f"Analyzed reply for lead {lead_id_resolved}: "
                     f"intent={intent}, confidence={confidence}"
                 )
 
                 return {
                     "success": True,
-                    "lead_id": lead_id,
+                    "lead_id": lead_id_resolved,
                     "intent": intent,
                     "confidence": confidence,
                     "summary": result.data.get("summary"),
@@ -275,8 +279,6 @@ def track_email_open(
     import asyncio
 
     async def _run() -> dict[str, Any]:
-        from datetime import UTC, datetime
-
         from app.storage.database import async_session_factory
         from app.storage.repositories.email_repo import EmailRepository
 
@@ -289,7 +291,7 @@ def track_email_open(
 
             # Update email
             if not email.opened_at:
-                email.opened_at = datetime.now(UTC)
+                email.opened_at = datetime.utcnow()
                 await email_repo.update(email)
 
                 event = create_event(
@@ -327,8 +329,6 @@ def track_email_click(
     import asyncio
 
     async def _run() -> dict[str, Any]:
-        from datetime import UTC, datetime
-
         from app.storage.database import async_session_factory
         from app.storage.repositories.email_repo import EmailRepository
 
@@ -341,7 +341,7 @@ def track_email_click(
 
             # Update email
             if not email.clicked_at:
-                email.clicked_at = datetime.now(UTC)
+                email.clicked_at = datetime.utcnow()
                 await email_repo.update(email)
 
             event = create_event(

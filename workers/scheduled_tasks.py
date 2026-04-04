@@ -4,8 +4,11 @@
 """
 
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
+
+# Python 3.10 compatibility
+UTC = timezone.utc
 
 from celery import shared_task
 from celery.schedules import crontab

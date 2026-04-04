@@ -112,15 +112,17 @@ class AnalyticsService:
         Returns:
             Funnel metrics
         """
+        # Use utcnow() for DB queries (offset-naive)
         if end_date is None:
-            period_end = datetime.now(UTC)
+            period_end = datetime.utcnow()
         else:
-            period_end = end_date
+            # Strip timezone if present for DB comparison
+            period_end = end_date.replace(tzinfo=None) if end_date.tzinfo else end_date
 
         if start_date is None:
             period_start = period_end - timedelta(days=period_days)
         else:
-            period_start = start_date
+            period_start = start_date.replace(tzinfo=None) if start_date.tzinfo else start_date
 
         # Base query
         base_filter = EmployerLeadDB.created_at >= period_start
@@ -187,15 +189,16 @@ class AnalyticsService:
         Returns:
             Email performance metrics
         """
+        # Use utcnow() for DB queries (offset-naive)
         if end_date is None:
-            period_end = datetime.now(UTC)
+            period_end = datetime.utcnow()
         else:
-            period_end = end_date
+            period_end = end_date.replace(tzinfo=None) if end_date.tzinfo else end_date
 
         if start_date is None:
             period_start = period_end - timedelta(days=period_days)
         else:
-            period_start = start_date
+            period_start = start_date.replace(tzinfo=None) if start_date.tzinfo else start_date
 
         # Base filter
         base_filter = EmailMessageDB.sent_at >= period_start
@@ -401,7 +404,7 @@ class AnalyticsService:
         Returns:
             Dict of intent -> count
         """
-        period_start = datetime.now(UTC) - timedelta(days=period_days)
+        period_start = datetime.utcnow() - timedelta(days=period_days)
 
         result = await self.db.execute(
             select(
@@ -426,7 +429,7 @@ class AnalyticsService:
         Returns:
             Handoff metrics
         """
-        period_start = datetime.now(UTC) - timedelta(days=period_days)
+        period_start = datetime.utcnow() - timedelta(days=period_days)
 
         # Total handoffs
         result = await self.db.execute(
@@ -513,8 +516,9 @@ class AnalyticsService:
         stats = []
 
         for i in range(days):
-            date = datetime.now(UTC).date() - timedelta(days=i)
-            day_start = datetime.combine(date, datetime.min.time()).replace(tzinfo=UTC)
+            date = datetime.utcnow().date() - timedelta(days=i)
+            # Use offset-naive datetime for DB comparison
+            day_start = datetime.combine(date, datetime.min.time())
             day_end = day_start + timedelta(days=1)
 
             # Leads created

@@ -4,9 +4,9 @@
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
-UTC = timezone.utc, timedelta
+UTC = timezone.utc
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
