@@ -5,12 +5,13 @@ const statusConfig: Record<
   { label: string; variant: "default" | "secondary" | "success" | "warning" | "destructive" }
 > = {
   LEAD_FOUND: { label: "Найден", variant: "secondary" },
+  ENRICHED: { label: "Обогащён", variant: "default" },
   ENRICHMENT_DONE: { label: "Обогащён", variant: "default" },
   SCORED: { label: "Оценён", variant: "default" },
   QUALIFIED: { label: "Квалифицирован", variant: "success" },
-  OUTREACH_SENT: { label: "Письмо отправлено", variant: "warning" },
-  REPLY_RECEIVED: { label: "Получен ответ", variant: "success" },
-  INTEREST_DETECTED: { label: "Интерес обнаружен", variant: "success" },
+  OUTREACH_SENT: { label: "Отправлено", variant: "warning" },
+  REPLY_RECEIVED: { label: "Ответил", variant: "success" },
+  INTEREST_DETECTED: { label: "Интерес", variant: "success" },
   HANDED_TO_MANAGER: { label: "Передан менеджеру", variant: "success" },
   CONVERTED: { label: "Конверсия", variant: "success" },
   ARCHIVED: { label: "Архив", variant: "secondary" },
