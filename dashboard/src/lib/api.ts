@@ -140,6 +140,35 @@ export interface LeadsResponse {
   pages: number
 }
 
+// Response wrappers for paginated endpoints
+interface PaginatedResponse<T> {
+  items: T[]
+  total: number
+}
+
+// Funnel response from API (object with status keys)
+interface FunnelResponse {
+  funnel: Record<string, number>
+}
+
+// Status labels for funnel
+const STATUS_LABELS: Record<string, string> = {
+  discovered: "Найдено",
+  lead_found: "Найдено",
+  enrichment_done: "Обогащено",
+  scored: "Оценено",
+  qualified: "Квалифицировано",
+  outreach_sent: "Отправлено",
+  reply_received: "Получен ответ",
+  interest_detected: "Интерес",
+  handed_to_manager: "Передано",
+  converted: "Конвертировано",
+  archived: "В архиве",
+  opted_out: "Отказ",
+  duplicate: "Дубликат",
+  cooldown: "Кулдаун",
+}
+
 // API functions
 export const api = {
   // Health
@@ -169,15 +198,30 @@ export const api = {
       body: JSON.stringify(params),
     }),
 
-  // Campaigns
-  getCampaigns: () => fetcher<Campaign[]>("/campaigns"),
+  // Campaigns - extract items from paginated response
+  getCampaigns: async (): Promise<Campaign[]> => {
+    const response = await fetcher<PaginatedResponse<Campaign>>("/campaigns")
+    return response.items || []
+  },
   getCampaign: (id: string) => fetcher<Campaign>(`/campaigns/${id}`),
 
   // Analytics
-  getFunnel: () => fetcher<FunnelData[]>("/analytics/funnel"),
-  getEmailPerformance: () => fetcher<EmailPerformance>("/analytics/email-perf"),
+  getFunnel: async (): Promise<FunnelData[]> => {
+    const response = await fetcher<FunnelResponse>("/analytics/funnel")
+    // Transform object {status: count} to array [{status, count, label}]
+    const funnelObj = response.funnel || {}
+    return Object.entries(funnelObj).map(([status, count]) => ({
+      status: status.toUpperCase(),
+      count,
+      label: STATUS_LABELS[status.toLowerCase()] || status,
+    }))
+  },
+  getEmailPerformance: () => fetcher<EmailPerformance>("/analytics/email-performance"),
   getCosts: () => fetcher<CostAnalytics>("/analytics/costs"),
 
-  // Handoffs
-  getHandoffs: () => fetcher<Handoff[]>("/handoffs"),
+  // Handoffs - extract items from paginated response
+  getHandoffs: async (): Promise<Handoff[]> => {
+    const response = await fetcher<PaginatedResponse<Handoff>>("/handoffs")
+    return response.items || []
+  },
 }

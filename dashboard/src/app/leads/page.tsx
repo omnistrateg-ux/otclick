@@ -363,7 +363,7 @@ export default function LeadsPage() {
                         <MapPin className="h-4 w-4" />
                         {lead.city}
                       </div>
-                      {lead.contacts[0] && (
+                      {lead.contacts?.[0] && (
                         <div className="flex items-center gap-2 text-zinc-400">
                           <Users className="h-4 w-4" />
                           {lead.contacts[0].name}
