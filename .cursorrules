@@ -1,0 +1,99 @@
+# .cursorrules — Otclick Employer Acquisition Engine
+
+## Что это за проект
+AI-система поиска, обогащения и прогрева работодателей через персонализированные email-цепочки для платформы массового найма «Отклик». Результат работы системы — тёплый лид, переданный менеджеру с полным контекстом для звонка.
+
+## Чего здесь НЕТ и никогда не должно быть
+- Поиска кандидатов, соискателей, исполнителей
+- Matching engine (сопоставление работник ↔ вакансия)
+- Candidate distribution
+- Marketplace вакансий
+- Закрытия смен
+
+Если задача касается любого из этих пунктов — отклоняй и спрашивай, не ошибка ли это.
+
+## Архитектурные правила (нарушение = баг)
+
+1. **Agent = мозг, Tool = руки.** Agent решает ЧТО делать. Tool делает КАК. Agent НИКОГДА не вызывает внешний API напрямую — только через Tool.
+
+2. **Только Orchestrator меняет статус лида.** Agent возвращает результат. Orchestrator валидирует переход по state machine и обновляет статус. Прямая запись status в agent — запрещена.
+
+3. **Только LLM Router вызывает LLM.** Agent передаёт `LLMRequest` в `LLMRouter.complete()`. Agent не знает, какая модель используется. Прямой вызов `openai.chat.create()` в агенте — запрещён.
+
+4. **Events = PostgreSQL + Celery.** Не in-memory bus, не Redis Streams, не Kafka. Event — это запись в таблице `events` + Celery task для async обработки.
+
+5. **Quality gate перед каждой отправкой email.** Письмо из LLM → `QualityGate.validate()` → если passed → отправка. Без gate не отправляем.
+
+6. **Compliance-first.** Каждое письмо — с unsubscribe link. Opt-out = навсегда. Bounce tracking обязателен. Rate limits на домен и отправителя.
+
+## Стек
+- Python 3.12+
+- FastAPI (async)
+- SQLAlchemy 2.0 (async, Pydantic v2 mode)
+- Pydantic v2 (все domain models)
+- PostgreSQL 16
+- Redis 7 (cache, rate limits, Celery broker)
+- Celery 5 (async tasks, scheduled jobs)
+- Alembic (migrations)
+- pytest + pytest-asyncio (тесты)
+
+## Структура файлов
+Основная документация: `ARCHITECTURE.md` — полная архитектура, domain models, state machine, API.
+Всегда сверяйся с ним при реализации.
+
+```
+app/
+├── config/settings.py          — Pydantic Settings
+├── models/enums.py             — все Enum'ы (LeadStatus, IndustrySegment, ...)
+├── models/domain.py            — Pydantic domain models (15 объектов)
+├── models/db.py                — SQLAlchemy ORM
+├── core/state_machine.py       — переходы + валидация
+├── orchestrator/engine.py      — LeadOrchestrator
+├── agents/base.py              — BaseAgent ABC
+├── agents/*_agent.py           — 8 конкретных агентов
+├── email/engine.py             — EmailIntelligenceEngine
+├── email/quality_gate.py       — валидация писем
+├── tools/*_tools.py            — concrete tool implementations
+├── llm/router.py               — LLMRouter
+├── llm/providers/*.py          — LLM provider adapters
+├── services/*_service.py       — бизнес-логика
+├── storage/repositories/*.py   — data access
+├── events/                     — event definitions + handlers
+├── api/*.py                    — FastAPI routers
+workers/                        — Celery tasks
+```
+
+## Стиль кода
+
+- Type hints ВЕЗДЕ. Никаких `def func(data):` без аннотаций.
+- Async/await для всего I/O (БД, Redis, HTTP, LLM).
+- Docstrings: русский для бизнес-логики, английский для инфраструктуры.
+- Максимум 200 строк на файл. Больше — разбивай.
+- Имена переменных — английский. Комментарии к бизнес-логике — можно русский.
+- Pydantic v2 модели с `model_config = {"from_attributes": True}`.
+- Никаких `print()`. Только `logging.getLogger(__name__)`.
+- Все UUID — `uuid.uuid4()`, не int ID.
+
+## Паттерн создания нового агента
+
+1. Создай tools в `app/tools/{name}_tools.py`
+2. Создай агента в `app/agents/{name}_agent.py` наследуя `BaseAgent`
+3. Создай Celery task в `workers/`
+4. Зарегистрируй event handler в `app/events/handlers.py`
+5. Добавь тест в `tests/unit/test_{name}.py`
+
+## При работе с Email Engine
+
+- Все промпты — в `app/email/prompts.py`, не inline в агенте
+- Segment context — в `app/email/templates.py`
+- Quality gate — в `app/email/quality_gate.py`
+- Генерация возвращает JSON `{"subject": "...", "body": "..."}`
+- Перед отправкой ВСЕГДА вызывай `QualityGate.validate()`
+
+## Ключевые файлы для контекста
+
+При реализации ЛЮБОГО модуля, подгружай в контекст:
+1. `ARCHITECTURE.md` (или нужный раздел)
+2. `app/models/enums.py`
+3. `app/models/domain.py`
+4. Файл зависимости (tools/services, которые используются)

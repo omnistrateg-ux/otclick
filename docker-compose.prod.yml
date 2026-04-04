@@ -1,0 +1,170 @@
+# Production Docker Compose
+# Usage: docker compose -f docker-compose.prod.yml up -d
+
+version: '3.8'
+
+services:
+  # FastAPI Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: otclick-app
+    environment:
+      - OTCLICK_ENVIRONMENT=production
+      - OTCLICK_DATABASE_URL=postgresql+asyncpg://otclick:${POSTGRES_PASSWORD}@postgres:5432/otclick_employer
+      - OTCLICK_REDIS_URL=redis://redis:6379/0
+      - OTCLICK_CELERY_BROKER_URL=redis://redis:6379/1
+      - OTCLICK_SECRET_KEY=${SECRET_KEY}
+      - OTCLICK_SENTRY_DSN=${SENTRY_DSN:-}
+      - OTCLICK_API_KEYS=${API_KEYS:-}
+      - OTCLICK_API_KEY_REQUIRED=true
+      - OTCLICK_LOG_FORMAT=json
+      - OTCLICK_OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OTCLICK_ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+
+  # Celery Worker
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: otclick-worker
+    environment:
+      - OTCLICK_ENVIRONMENT=production
+      - OTCLICK_DATABASE_URL=postgresql+asyncpg://otclick:${POSTGRES_PASSWORD}@postgres:5432/otclick_employer
+      - OTCLICK_REDIS_URL=redis://redis:6379/0
+      - OTCLICK_CELERY_BROKER_URL=redis://redis:6379/1
+      - OTCLICK_SECRET_KEY=${SECRET_KEY}
+      - OTCLICK_SENTRY_DSN=${SENTRY_DSN:-}
+      - OTCLICK_LOG_FORMAT=json
+      - OTCLICK_OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OTCLICK_ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
+
+  # Celery Beat Scheduler
+  beat:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: otclick-beat
+    command: celery -A workers.celery_app beat --loglevel=info
+    environment:
+      - OTCLICK_ENVIRONMENT=production
+      - OTCLICK_DATABASE_URL=postgresql+asyncpg://otclick:${POSTGRES_PASSWORD}@postgres:5432/otclick_employer
+      - OTCLICK_REDIS_URL=redis://redis:6379/0
+      - OTCLICK_CELERY_BROKER_URL=redis://redis:6379/1
+      - OTCLICK_LOG_FORMAT=json
+    depends_on:
+      - redis
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: otclick-postgres
+    environment:
+      POSTGRES_USER: otclick
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: otclick_employer
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U otclick -d otclick_employer"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 256M
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    container_name: otclick-redis
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
+
+  # Prometheus (optional - for metrics)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: otclick-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  # Grafana (optional - for dashboards)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: otclick-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+    volumes:
+      - grafana_data:/var/lib/grafana
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+volumes:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
