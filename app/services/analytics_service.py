@@ -5,7 +5,7 @@ KPI, метрики, дашборд из ARCHITECTURE.md раздел 13.
 
 import logging
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
@@ -23,6 +23,9 @@ from app.models.db import (
 )
 from app.models.enums import IndustrySegment, LeadStatus, ReplyIntent
 
+# Python 3.10 compatibility
+UTC = timezone.utc
+
 logger = logging.getLogger(__name__)
 
 
@@ -30,24 +33,16 @@ logger = logging.getLogger(__name__)
 class FunnelMetrics:
     """Funnel conversion metrics."""
 
-    leads_found: int
+    discovered: int
     enriched: int
     scored: int
-    email_ready: int
-    outreach_sent: int
-    replied: int
-    interest_detected: int
     qualified: int
-    handed_to_manager: int
-
-    # Calculated rates
-    enrichment_rate: float
-    score_pass_rate: float
-    outreach_rate: float
-    reply_rate: float
-    positive_reply_rate: float
-    qualification_rate: float
-    handoff_rate: float
+    outreach_started: int
+    replied: int
+    interested: int
+    handed_off: int
+    converted: int
+    lost: int
 
     period_start: datetime
     period_end: datetime
@@ -58,18 +53,18 @@ class EmailPerformance:
     """Email performance metrics."""
 
     total_sent: int
-    delivered: int
-    bounced: int
-    opened: int
-    replied: int
+    total_delivered: int
+    total_opened: int
+    total_clicked: int
+    total_replied: int
+    total_bounced: int
 
-    delivery_rate: float
     open_rate: float
+    click_rate: float
     reply_rate: float
     bounce_rate: float
 
-    by_segment: dict[str, dict[str, float]]
-    by_email_type: dict[str, dict[str, float]]
+    by_type: dict[str, dict[str, float]] | None = None
 
 
 @dataclass
@@ -99,20 +94,33 @@ class AnalyticsService:
 
     async def get_funnel_metrics(
         self,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
+        segment: str | None = None,
         period_days: int = 7,
         campaign_id: UUID | None = None,
     ) -> FunnelMetrics:
         """Get funnel conversion metrics.
 
         Args:
-            period_days: Number of days to analyze
+            start_date: Start of date range (optional)
+            end_date: End of date range (optional)
+            segment: Filter by segment (optional)
+            period_days: Number of days to analyze (used if start_date not provided)
             campaign_id: Filter by campaign (optional)
 
         Returns:
             Funnel metrics
         """
-        period_start = datetime.now(UTC) - timedelta(days=period_days)
-        period_end = datetime.now(UTC)
+        if end_date is None:
+            period_end = datetime.now(UTC)
+        else:
+            period_end = end_date
+
+        if start_date is None:
+            period_start = period_end - timedelta(days=period_days)
+        else:
+            period_start = start_date
 
         # Base query
         base_filter = EmployerLeadDB.created_at >= period_start
@@ -129,66 +137,65 @@ class AnalyticsService:
             )
             status_counts[status.value] = result.scalar_one() or 0
 
-        # Get counts
-        leads_found = await self._count_leads_created(period_start, campaign_id)
+        # Get counts - map old status names to new
+        discovered = await self._count_leads_created(period_start, campaign_id)
         enriched = status_counts.get(LeadStatus.ENRICHED.value, 0)
         scored = status_counts.get(LeadStatus.SCORED.value, 0)
-        email_ready = status_counts.get(LeadStatus.EMAIL_READY.value, 0)
+        qualified = status_counts.get(LeadStatus.QUALIFIED.value, 0)
         outreach_sent = status_counts.get(LeadStatus.OUTREACH_SENT.value, 0)
         in_sequence = status_counts.get(LeadStatus.IN_SEQUENCE.value, 0)
         reply_received = status_counts.get(LeadStatus.REPLY_RECEIVED.value, 0)
         interest_detected = status_counts.get(LeadStatus.INTEREST_DETECTED.value, 0)
-        qualified = status_counts.get(LeadStatus.QUALIFIED.value, 0)
         handed = status_counts.get(LeadStatus.HANDED_TO_MANAGER.value, 0)
+        converted = status_counts.get(LeadStatus.CONVERTED.value, 0)
+        archived = status_counts.get(LeadStatus.ARCHIVED.value, 0)
+        opted_out = status_counts.get(LeadStatus.OPTED_OUT.value, 0)
 
-        # Calculate total sent
-        total_sent = outreach_sent + in_sequence + reply_received + interest_detected + qualified + handed
-
-        # Calculate rates
-        enrichment_rate = enriched / leads_found if leads_found > 0 else 0
-        score_pass_rate = scored / enriched if enriched > 0 else 0
-        outreach_rate = total_sent / scored if scored > 0 else 0
-        reply_rate = (reply_received + interest_detected + qualified + handed) / total_sent if total_sent > 0 else 0
-        positive_reply_rate = (interest_detected + qualified + handed) / (reply_received + interest_detected + qualified + handed) if (reply_received + interest_detected + qualified + handed) > 0 else 0
-        qualification_rate = (qualified + handed) / interest_detected if interest_detected > 0 else 0
-        handoff_rate = handed / qualified if qualified > 0 else 0
+        # Calculate total outreach
+        outreach_started = outreach_sent + in_sequence + reply_received + interest_detected + qualified + handed + converted
 
         return FunnelMetrics(
-            leads_found=leads_found,
+            discovered=discovered,
             enriched=enriched,
             scored=scored,
-            email_ready=email_ready,
-            outreach_sent=total_sent,
-            replied=reply_received + interest_detected + qualified + handed,
-            interest_detected=interest_detected,
             qualified=qualified,
-            handed_to_manager=handed,
-            enrichment_rate=enrichment_rate,
-            score_pass_rate=score_pass_rate,
-            outreach_rate=outreach_rate,
-            reply_rate=reply_rate,
-            positive_reply_rate=positive_reply_rate,
-            qualification_rate=qualification_rate,
-            handoff_rate=handoff_rate,
+            outreach_started=outreach_started,
+            replied=reply_received + interest_detected,
+            interested=interest_detected,
+            handed_off=handed,
+            converted=converted,
+            lost=archived + opted_out,
             period_start=period_start,
             period_end=period_end,
         )
 
     async def get_email_performance(
         self,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
         period_days: int = 7,
         campaign_id: UUID | None = None,
     ) -> EmailPerformance:
         """Get email performance metrics.
 
         Args:
-            period_days: Number of days to analyze
+            start_date: Start of date range (optional)
+            end_date: End of date range (optional)
+            period_days: Number of days to analyze (used if start_date not provided)
             campaign_id: Filter by campaign (optional)
 
         Returns:
             Email performance metrics
         """
-        period_start = datetime.now(UTC) - timedelta(days=period_days)
+        if end_date is None:
+            period_end = datetime.now(UTC)
+        else:
+            period_end = end_date
+
+        if start_date is None:
+            period_start = period_end - timedelta(days=period_days)
+        else:
+            period_start = start_date
 
         # Base filter
         base_filter = EmailMessageDB.sent_at >= period_start
@@ -207,7 +214,7 @@ class AnalyticsService:
                 and_(base_filter, EmailMessageDB.delivered == True)  # noqa: E712
             )
         )
-        delivered = result.scalar_one() or 0
+        total_delivered = result.scalar_one() or 0
 
         # Bounced
         result = await self.db.execute(
@@ -215,7 +222,7 @@ class AnalyticsService:
                 and_(base_filter, EmailMessageDB.bounced == True)  # noqa: E712
             )
         )
-        bounced = result.scalar_one() or 0
+        total_bounced = result.scalar_one() or 0
 
         # Opened
         result = await self.db.execute(
@@ -223,7 +230,19 @@ class AnalyticsService:
                 and_(base_filter, EmailMessageDB.opened == True)  # noqa: E712
             )
         )
-        opened = result.scalar_one() or 0
+        total_opened = result.scalar_one() or 0
+
+        # Clicked (assuming there's a clicked field, else use 0)
+        total_clicked = 0
+        try:
+            result = await self.db.execute(
+                select(func.count(EmailMessageDB.id)).where(
+                    and_(base_filter, EmailMessageDB.clicked == True)  # noqa: E712
+                )
+            )
+            total_clicked = result.scalar_one() or 0
+        except Exception:
+            pass
 
         # Replied
         result = await self.db.execute(
@@ -231,27 +250,144 @@ class AnalyticsService:
                 and_(base_filter, EmailMessageDB.replied == True)  # noqa: E712
             )
         )
-        replied = result.scalar_one() or 0
+        total_replied = result.scalar_one() or 0
 
         # Calculate rates
-        delivery_rate = delivered / total_sent if total_sent > 0 else 0
-        open_rate = opened / delivered if delivered > 0 else 0
-        reply_rate = replied / delivered if delivered > 0 else 0
-        bounce_rate = bounced / total_sent if total_sent > 0 else 0
+        open_rate = total_opened / total_delivered if total_delivered > 0 else 0
+        click_rate = total_clicked / total_delivered if total_delivered > 0 else 0
+        reply_rate = total_replied / total_delivered if total_delivered > 0 else 0
+        bounce_rate = total_bounced / total_sent if total_sent > 0 else 0
 
         return EmailPerformance(
             total_sent=total_sent,
-            delivered=delivered,
-            bounced=bounced,
-            opened=opened,
-            replied=replied,
-            delivery_rate=delivery_rate,
+            total_delivered=total_delivered,
+            total_opened=total_opened,
+            total_clicked=total_clicked,
+            total_replied=total_replied,
+            total_bounced=total_bounced,
             open_rate=open_rate,
+            click_rate=click_rate,
             reply_rate=reply_rate,
             bounce_rate=bounce_rate,
-            by_segment={},  # TODO: implement segment breakdown
-            by_email_type={},  # TODO: implement email type breakdown
+            by_type={},
         )
+
+    async def get_time_series(
+        self,
+        metric: str,
+        start_date: datetime,
+        end_date: datetime,
+        granularity: str = "day",
+    ) -> list[dict[str, Any]]:
+        """Get time series data for a metric.
+
+        Args:
+            metric: Metric name
+            start_date: Start date
+            end_date: End date
+            granularity: Time granularity (hour, day, week, month)
+
+        Returns:
+            List of data points
+        """
+        data = []
+        current = start_date
+
+        if granularity == "hour":
+            delta = timedelta(hours=1)
+        elif granularity == "week":
+            delta = timedelta(weeks=1)
+        elif granularity == "month":
+            delta = timedelta(days=30)
+        else:
+            delta = timedelta(days=1)
+
+        while current < end_date:
+            next_date = current + delta
+
+            if metric == "discovered":
+                result = await self.db.execute(
+                    select(func.count(EmployerLeadDB.id)).where(
+                        and_(
+                            EmployerLeadDB.created_at >= current,
+                            EmployerLeadDB.created_at < next_date,
+                        )
+                    )
+                )
+                value = result.scalar_one() or 0
+            elif metric == "sent":
+                result = await self.db.execute(
+                    select(func.count(EmailMessageDB.id)).where(
+                        and_(
+                            EmailMessageDB.sent_at >= current,
+                            EmailMessageDB.sent_at < next_date,
+                        )
+                    )
+                )
+                value = result.scalar_one() or 0
+            elif metric == "opened":
+                result = await self.db.execute(
+                    select(func.count(EmailMessageDB.id)).where(
+                        and_(
+                            EmailMessageDB.opened == True,  # noqa: E712
+                            EmailMessageDB.sent_at >= current,
+                            EmailMessageDB.sent_at < next_date,
+                        )
+                    )
+                )
+                value = result.scalar_one() or 0
+            elif metric == "replied":
+                result = await self.db.execute(
+                    select(func.count(EmailMessageDB.id)).where(
+                        and_(
+                            EmailMessageDB.replied == True,  # noqa: E712
+                            EmailMessageDB.sent_at >= current,
+                            EmailMessageDB.sent_at < next_date,
+                        )
+                    )
+                )
+                value = result.scalar_one() or 0
+            elif metric == "converted":
+                result = await self.db.execute(
+                    select(func.count(EmployerLeadDB.id)).where(
+                        and_(
+                            EmployerLeadDB.status == LeadStatus.CONVERTED.value,
+                            EmployerLeadDB.updated_at >= current,
+                            EmployerLeadDB.updated_at < next_date,
+                        )
+                    )
+                )
+                value = result.scalar_one() or 0
+            else:
+                value = 0
+
+            data.append({
+                "date": current.isoformat(),
+                "value": value,
+            })
+
+            current = next_date
+
+        return data
+
+    async def get_segment_performance(
+        self,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
+        period_days: int = 30,
+    ) -> list[dict[str, Any]]:
+        """Get performance breakdown by segment.
+
+        Args:
+            start_date: Start of date range
+            end_date: End of date range
+            period_days: Number of days to analyze
+
+        Returns:
+            List of segment metrics
+        """
+        # TODO: Implement with proper segment data
+        return []
 
     async def get_reply_intent_distribution(
         self,
@@ -277,21 +413,6 @@ class AnalyticsService:
         )
 
         return dict(result.all())
-
-    async def get_segment_performance(
-        self,
-        period_days: int = 30,
-    ) -> dict[str, dict[str, Any]]:
-        """Get performance breakdown by segment.
-
-        Args:
-            period_days: Number of days to analyze
-
-        Returns:
-            Dict of segment -> metrics
-        """
-        # TODO: Implement with proper joins
-        return {}
 
     async def get_handoff_metrics(
         self,
@@ -438,36 +559,55 @@ class AnalyticsService:
 
         return list(reversed(stats))
 
-    async def export_metrics_summary(self) -> dict[str, Any]:
-        """Export full metrics summary for dashboard.
+    async def export_data(
+        self,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
+    ) -> dict[str, Any]:
+        """Export analytics data.
+
+        Args:
+            start_date: Start of date range
+            end_date: End of date range
 
         Returns:
-            Complete metrics summary
+            Export data
         """
-        funnel = await self.get_funnel_metrics(period_days=7)
-        email_perf = await self.get_email_performance(period_days=7)
+        funnel = await self.get_funnel_metrics(start_date=start_date, end_date=end_date)
+        email_perf = await self.get_email_performance(start_date=start_date, end_date=end_date)
         handoff = await self.get_handoff_metrics(period_days=7)
         daily = await self.get_daily_stats(days=7)
         intents = await self.get_reply_intent_distribution(period_days=7)
 
         return {
             "funnel": {
-                "leads_found": funnel.leads_found,
-                "enrichment_rate": f"{funnel.enrichment_rate:.1%}",
-                "outreach_sent": funnel.outreach_sent,
-                "reply_rate": f"{funnel.reply_rate:.1%}",
-                "positive_reply_rate": f"{funnel.positive_reply_rate:.1%}",
+                "discovered": funnel.discovered,
+                "enriched": funnel.enriched,
+                "scored": funnel.scored,
                 "qualified": funnel.qualified,
-                "handed_to_manager": funnel.handed_to_manager,
+                "outreach_started": funnel.outreach_started,
+                "replied": funnel.replied,
+                "interested": funnel.interested,
+                "handed_off": funnel.handed_off,
+                "converted": funnel.converted,
+                "lost": funnel.lost,
             },
             "email": {
                 "total_sent": email_perf.total_sent,
-                "open_rate": f"{email_perf.open_rate:.1%}",
-                "reply_rate": f"{email_perf.reply_rate:.1%}",
-                "bounce_rate": f"{email_perf.bounce_rate:.1%}",
+                "open_rate": email_perf.open_rate,
+                "reply_rate": email_perf.reply_rate,
+                "bounce_rate": email_perf.bounce_rate,
             },
             "handoff": handoff,
             "reply_intents": intents,
             "daily_stats": daily,
             "generated_at": datetime.now(UTC).isoformat(),
         }
+
+    async def export_metrics_summary(self) -> dict[str, Any]:
+        """Export full metrics summary for dashboard.
+
+        Returns:
+            Complete metrics summary
+        """
+        return await self.export_data()

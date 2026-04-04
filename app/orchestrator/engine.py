@@ -23,7 +23,9 @@ Note: LeadStatus enum values:
 """
 
 import logging
-from datetime import UTC, datetime
+from datetime import datetime, timezone
+
+UTC = timezone.utc
 from typing import Any
 
 from app.core.state_machine import LeadStateMachine

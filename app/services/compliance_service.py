@@ -5,7 +5,9 @@ Unsubscribe, opt-out, 152-ФЗ, дедупликация из ARCHITECTURE.md р
 
 import logging
 import re
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timezone
+
+UTC = timezone.utc, timedelta
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession

@@ -1,6 +1,6 @@
 """Event repository."""
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from uuid import UUID
 
 from sqlalchemy import select, update
@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.db import DomainEventDB
 from app.models.domain import DomainEvent
 
+UTC = timezone.utc
 
 class EventRepository:
     """Repository for DomainEvent operations."""

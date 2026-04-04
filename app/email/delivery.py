@@ -5,7 +5,9 @@ SMTP отправка + bounce handling из ARCHITECTURE.md.
 
 import logging
 import smtplib
-from datetime import UTC, datetime
+from datetime import datetime, timezone
+
+UTC = timezone.utc
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formataddr, make_msgid

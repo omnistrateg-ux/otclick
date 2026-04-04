@@ -3,8 +3,10 @@
 Метрики, отчёты и аналитика.
 """
 
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
+
+UTC = timezone.utc
 
 from fastapi import APIRouter, Query
 from pydantic import BaseModel

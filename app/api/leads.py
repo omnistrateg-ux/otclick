@@ -3,7 +3,9 @@
 CRUD операции и управление лидами.
 """
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
+
+UTC = timezone.utc
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -119,12 +121,12 @@ async def list_leads(
         return LeadListResponse(
             items=[
                 LeadResponse(
-                    id=lead.id,
+                    id=str(lead.id),
                     company_name=lead.company_name,
                     status=lead.status.value,
-                    score=lead.score,
-                    segment=lead.segment,
-                    industry=lead.industry,
+                    score=None,
+                    segment=None,
+                    industry=None,
                     city=lead.city,
                     created_at=lead.created_at,
                     updated_at=lead.updated_at,
@@ -181,12 +183,12 @@ async def get_lead(lead_id: str) -> LeadResponse:
             raise HTTPException(404, f"Lead {lead_id} not found")
 
         return LeadResponse(
-            id=lead.id,
+            id=str(lead.id),
             company_name=lead.company_name,
             status=lead.status.value,
-            score=lead.score,
-            segment=lead.segment,
-            industry=lead.industry,
+            score=None,
+            segment=None,
+            industry=None,
             city=lead.city,
             created_at=lead.created_at,
             updated_at=lead.updated_at,
@@ -216,24 +218,24 @@ async def create_lead(request: LeadCreateRequest) -> LeadResponse:
         # Create lead
         lead = EmployerLead(
             company_name=request.company_name,
-            hh_employer_id=request.hh_employer_id,
-            industry=request.industry,
+            domain=request.website,
+            source="api",
             city=request.city,
-            website=request.website,
-            status=LeadStatus.DISCOVERED,
+            status=LeadStatus.LEAD_FOUND,
             created_at=datetime.now(UTC),
             updated_at=datetime.now(UTC),
         )
 
         lead = await lead_repo.create(lead)
+        await db.commit()
 
         return LeadResponse(
-            id=lead.id,
+            id=str(lead.id),
             company_name=lead.company_name,
             status=lead.status.value,
-            score=lead.score,
-            segment=lead.segment,
-            industry=lead.industry,
+            score=None,
+            segment=None,
+            industry=None,
             city=lead.city,
             created_at=lead.created_at,
             updated_at=lead.updated_at,
@@ -269,21 +271,19 @@ async def update_lead(
                 lead.status = LeadStatus(request.status)
             except ValueError:
                 raise HTTPException(400, f"Invalid status: {request.status}")
-        if request.score is not None:
-            lead.score = request.score
-        if request.segment:
-            lead.segment = request.segment
+        # Note: score and segment are stored in related tables, not on lead
+        # TODO: implement score/segment updates via related repos
 
         lead.updated_at = datetime.now(UTC)
         await lead_repo.update(lead)
 
         return LeadResponse(
-            id=lead.id,
+            id=str(lead.id),
             company_name=lead.company_name,
             status=lead.status.value,
-            score=lead.score,
-            segment=lead.segment,
-            industry=lead.industry,
+            score=None,
+            segment=None,
+            industry=None,
             city=lead.city,
             created_at=lead.created_at,
             updated_at=lead.updated_at,
@@ -337,12 +337,12 @@ async def transition_lead(
         await lead_repo.update(lead)
 
         return LeadResponse(
-            id=lead.id,
+            id=str(lead.id),
             company_name=lead.company_name,
             status=lead.status.value,
-            score=lead.score,
-            segment=lead.segment,
-            industry=lead.industry,
+            score=None,
+            segment=None,
+            industry=None,
             city=lead.city,
             created_at=lead.created_at,
             updated_at=lead.updated_at,

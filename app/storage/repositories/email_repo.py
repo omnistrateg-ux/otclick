@@ -3,7 +3,7 @@
 Repository для работы с email-последовательностями и сообщениями.
 """
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from uuid import UUID
 
 from sqlalchemy import and_, select
@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.db import EmailMessageDB, EmailSequenceDB
 
+UTC = timezone.utc
 
 class EmailRepository:
     """Repository for email sequences and messages."""

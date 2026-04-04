@@ -7,7 +7,9 @@ import hashlib
 import hmac
 import logging
 import secrets
-from datetime import UTC, datetime
+from datetime import datetime, timezone
+
+UTC = timezone.utc
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request, Security

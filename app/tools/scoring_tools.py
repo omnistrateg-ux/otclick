@@ -3,7 +3,9 @@
 Скоринг и сегментация согласно ARCHITECTURE.md раздел 4.5-4.6.
 """
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
+
+UTC = timezone.utc
 from uuid import uuid4
 
 from app.models.domain import (

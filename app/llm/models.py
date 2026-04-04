@@ -1,6 +1,8 @@
 """LLM request and response models."""
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
+
+UTC = timezone.utc
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field

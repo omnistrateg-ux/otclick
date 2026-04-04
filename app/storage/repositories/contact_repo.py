@@ -9,6 +9,7 @@ from app.models.db import EmployerContactDB
 from app.models.domain import EmployerContact
 from app.models.enums import ContactRole
 
+UTC = timezone.utc
 
 class ContactRepository:
     """Repository for EmployerContact operations."""
@@ -183,8 +184,7 @@ class ContactRepository:
         Args:
             contact_id: Contact UUID
         """
-        from datetime import UTC, datetime
-
+        from datetime import datetime, timezone
         await self.session.execute(
             update(EmployerContactDB)
             .where(EmployerContactDB.id == contact_id)

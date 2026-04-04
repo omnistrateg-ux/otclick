@@ -6,7 +6,9 @@
 import json
 import logging
 import re
-from datetime import UTC, datetime
+from datetime import datetime, timezone
+
+UTC = timezone.utc
 
 from app.email.prompts import build_response_analysis_prompt
 from app.llm.models import LLMRequest

@@ -1,15 +1,16 @@
 """Lead repository for database operations."""
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.db import EmployerLeadDB
 from app.models.domain import EmployerLead
 from app.models.enums import LeadStatus
 
+UTC = timezone.utc
 
 class LeadRepository:
     """Repository for EmployerLead operations."""
@@ -205,6 +206,135 @@ class LeadRepository:
             select(EmployerLeadDB.id).where(EmployerLeadDB.domain == domain).limit(1)
         )
         return result.scalar_one_or_none() is not None
+
+    async def find_by_company_name(self, company_name: str) -> EmployerLead | None:
+        """Find lead by company name.
+
+        Args:
+            company_name: Company name to search for
+
+        Returns:
+            Lead or None if not found
+        """
+        result = await self.session.execute(
+            select(EmployerLeadDB).where(EmployerLeadDB.company_name == company_name)
+        )
+        db_lead = result.scalar_one_or_none()
+
+        if not db_lead:
+            return None
+
+        return self._to_domain(db_lead)
+
+    async def get(self, lead_id: str) -> EmployerLead | None:
+        """Get lead by ID (string).
+
+        Args:
+            lead_id: Lead ID as string
+
+        Returns:
+            Lead or None if not found
+        """
+        try:
+            uuid_id = UUID(lead_id)
+        except (ValueError, TypeError):
+            return None
+
+        return await self.get_by_id(uuid_id)
+
+    async def find_paginated(
+        self,
+        filters: dict | None = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> tuple[list[EmployerLead], int]:
+        """Find leads with pagination.
+
+        Args:
+            filters: Filter dict with optional keys: status, segment
+            page: Page number (1-indexed)
+            page_size: Items per page
+
+        Returns:
+            Tuple of (leads list, total count)
+        """
+        filters = filters or {}
+
+        # Build query
+        query = select(EmployerLeadDB)
+
+        # Apply filters
+        if "status" in filters:
+            status = filters["status"]
+            if isinstance(status, LeadStatus):
+                query = query.where(EmployerLeadDB.status == status.value)
+            else:
+                query = query.where(EmployerLeadDB.status == str(status))
+
+        # Count total
+        count_query = select(func.count(EmployerLeadDB.id))
+        if "status" in filters:
+            status = filters["status"]
+            if isinstance(status, LeadStatus):
+                count_query = count_query.where(EmployerLeadDB.status == status.value)
+            else:
+                count_query = count_query.where(EmployerLeadDB.status == str(status))
+
+        count_result = await self.session.execute(count_query)
+        total = count_result.scalar_one() or 0
+
+        # Apply pagination
+        offset = (page - 1) * page_size
+        query = query.order_by(EmployerLeadDB.created_at.desc()).offset(offset).limit(page_size)
+
+        result = await self.session.execute(query)
+        leads = [self._to_domain(row) for row in result.scalars()]
+
+        return leads, total
+
+    async def get_stats(self) -> dict:
+        """Get lead statistics.
+
+        Returns:
+            Dict with stats: total, by_status, by_segment, average_score
+        """
+        # Total count
+        result = await self.session.execute(select(func.count(EmployerLeadDB.id)))
+        total = result.scalar_one() or 0
+
+        # By status
+        status_result = await self.session.execute(
+            select(EmployerLeadDB.status, func.count(EmployerLeadDB.id))
+            .group_by(EmployerLeadDB.status)
+        )
+        by_status = dict(status_result.all())
+
+        return {
+            "total": total,
+            "by_status": by_status,
+            "by_segment": {},  # TODO: implement when segments are tracked
+            "average_score": 0.0,  # TODO: implement when scores are tracked
+        }
+
+    async def delete(self, lead_id: str) -> bool:
+        """Delete a lead.
+
+        Args:
+            lead_id: Lead ID as string
+
+        Returns:
+            True if deleted, False if not found
+        """
+        try:
+            uuid_id = UUID(lead_id)
+        except (ValueError, TypeError):
+            return False
+
+        result = await self.session.execute(
+            delete(EmployerLeadDB).where(EmployerLeadDB.id == uuid_id)
+        )
+        await self.session.commit()
+        return result.rowcount > 0
 
     def _to_domain(self, db_lead: EmployerLeadDB) -> EmployerLead:
         """Convert DB model to domain model."""

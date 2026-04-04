@@ -22,6 +22,7 @@ class LeadStatus(str, Enum):
     INTEREST_DETECTED = "interest_detected"
     QUALIFIED = "qualified"
     HANDED_TO_MANAGER = "handed_to_manager"
+    CONVERTED = "converted"  # сделка закрыта
 
     # Терминальные / боковые
     ARCHIVED = "archived"  # не подошёл (low score, no contacts, etc.)

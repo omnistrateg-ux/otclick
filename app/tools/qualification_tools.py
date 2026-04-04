@@ -5,7 +5,9 @@
 
 import json
 import logging
-from datetime import UTC, datetime
+from datetime import datetime, timezone
+
+UTC = timezone.utc
 from uuid import UUID
 
 from app.llm.models import LLMRequest

@@ -4,7 +4,9 @@
 Обработка через Celery tasks.
 """
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
+
+UTC = timezone.utc
 from enum import StrEnum
 from typing import Any
 from uuid import uuid4

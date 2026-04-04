@@ -3,7 +3,9 @@
 Реализует граф переходов из ARCHITECTURE.md раздел 5.
 """
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
+
+UTC = timezone.utc
 
 from app.core.exceptions import InvalidStateTransitionError
 from app.models.domain import EmployerLead, StatusChange
