@@ -83,6 +83,21 @@ class PreviewEmailResponse(BaseModel):
     quality_check: dict[str, Any]
 
 
+def _get_email_status(email) -> str:
+    """Get email status from boolean fields."""
+    if email.replied:
+        return "replied"
+    if email.bounced:
+        return "bounced"
+    if email.opened:
+        return "opened"
+    if email.delivered:
+        return "delivered"
+    if email.sent_at:
+        return "sent"
+    return "pending"
+
+
 @router.get("", response_model=EmailListResponse)
 async def list_emails(
     lead_id: str | None = Query(None, description="Filter by lead ID"),
@@ -103,10 +118,12 @@ async def list_emails(
     Returns:
         Paginated list of emails
     """
+    from app.storage.repositories.contact_repo import ContactRepository
     from app.storage.repositories.email_repo import EmailRepository
 
     async with async_session_factory() as db:
         email_repo = EmailRepository(db)
+        contact_repo = ContactRepository(db)
 
         filters = {}
         if lead_id:
@@ -122,22 +139,30 @@ async def list_emails(
             page_size=page_size,
         )
 
-        return EmailListResponse(
-            items=[
+        # Build response with contact emails
+        items = []
+        for email in emails:
+            # Get contact email
+            contact = await contact_repo.get_by_id(email.contact_id) if email.contact_id else None
+            to_email = contact.email if contact else "unknown@example.com"
+
+            items.append(
                 EmailResponse(
-                    id=email.id,
-                    lead_id=email.lead_id,
-                    to_email=email.to_email,
+                    id=str(email.id),
+                    lead_id=str(email.lead_id),
+                    to_email=to_email,
                     subject=email.subject,
                     email_type=email.email_type.value if hasattr(email.email_type, 'value') else email.email_type,
-                    status=email.delivery_status or "pending",
+                    status=_get_email_status(email),
                     sent_at=email.sent_at,
                     opened_at=email.opened_at,
-                    clicked_at=email.clicked_at,
+                    clicked_at=getattr(email, 'clicked_at', None),
                     replied_at=email.replied_at,
                 )
-                for email in emails
-            ],
+            )
+
+        return EmailListResponse(
+            items=items,
             total=total,
             page=page,
             page_size=page_size,
@@ -192,25 +217,31 @@ async def get_email(email_id: str) -> EmailResponse:
     Returns:
         Email details
     """
+    from app.storage.repositories.contact_repo import ContactRepository
     from app.storage.repositories.email_repo import EmailRepository
 
     async with async_session_factory() as db:
         email_repo = EmailRepository(db)
+        contact_repo = ContactRepository(db)
         email = await email_repo.get(email_id)
 
         if not email:
             raise HTTPException(404, f"Email {email_id} not found")
 
+        # Get contact email
+        contact = await contact_repo.get_by_id(email.contact_id) if email.contact_id else None
+        to_email = contact.email if contact else "unknown@example.com"
+
         return EmailResponse(
-            id=email.id,
-            lead_id=email.lead_id,
-            to_email=email.to_email,
+            id=str(email.id),
+            lead_id=str(email.lead_id),
+            to_email=to_email,
             subject=email.subject,
             email_type=email.email_type.value if hasattr(email.email_type, 'value') else email.email_type,
-            status=email.delivery_status or "pending",
+            status=_get_email_status(email),
             sent_at=email.sent_at,
             opened_at=email.opened_at,
-            clicked_at=email.clicked_at,
+            clicked_at=getattr(email, 'clicked_at', None),
             replied_at=email.replied_at,
         )
 
@@ -238,8 +269,8 @@ async def send_email(request: SendEmailRequest) -> EmailResponse:
             raise HTTPException(404, f"Lead {request.lead_id} not found")
 
         # Check compliance
-        compliance = ComplianceService()
-        if not await compliance.can_send_email(request.lead_id, request.to_email):
+        compliance = ComplianceService(db)
+        if not await compliance.can_send_email(lead, None, request.to_email):
             raise HTTPException(400, "Cannot send email: compliance check failed")
 
         # Send email

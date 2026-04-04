@@ -321,7 +321,7 @@ async def transition_lead(
         orchestrator = LeadOrchestrator()
 
         if not orchestrator.can_transition(lead, target_status):
-            allowed = orchestrator.get_allowed_transitions(lead)
+            allowed = orchestrator.get_valid_transitions(lead)
             raise HTTPException(
                 400,
                 f"Cannot transition from {lead.status} to {target_status}. "
@@ -369,7 +369,7 @@ async def get_allowed_transitions(lead_id: str) -> dict[str, Any]:
             raise HTTPException(404, f"Lead {lead_id} not found")
 
         orchestrator = LeadOrchestrator()
-        allowed = orchestrator.get_allowed_transitions(lead)
+        allowed = orchestrator.get_valid_transitions(lead)
 
         return {
             "current_status": lead.status.value,

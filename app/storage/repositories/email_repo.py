@@ -385,3 +385,135 @@ class EmailRepository:
         """
         # TODO: Implement with contact email domain join
         return 0
+
+    # ==================
+    # API Support Methods
+    # ==================
+
+    async def get(self, message_id: str | UUID) -> EmailMessageDB | None:
+        """Get email message by ID (alias for get_message).
+
+        Args:
+            message_id: Message ID
+
+        Returns:
+            Message or None
+        """
+        if isinstance(message_id, str):
+            try:
+                message_id = UUID(message_id)
+            except ValueError:
+                return None
+        return await self.get_message(message_id)
+
+    async def update(self, message: EmailMessageDB) -> None:
+        """Update email message.
+
+        Args:
+            message: Message to update
+        """
+        await self.db.flush()
+
+    async def find_paginated(
+        self,
+        filters: dict | None = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> tuple[list[EmailMessageDB], int]:
+        """Find emails with pagination.
+
+        Args:
+            filters: Filter criteria
+            page: Page number
+            page_size: Items per page
+
+        Returns:
+            Tuple of (emails, total_count)
+        """
+        from sqlalchemy import func
+
+        filters = filters or {}
+        query = select(EmailMessageDB)
+
+        # Apply filters
+        if "lead_id" in filters:
+            lead_id = filters["lead_id"]
+            if isinstance(lead_id, str):
+                lead_id = UUID(lead_id)
+            query = query.where(EmailMessageDB.lead_id == lead_id)
+
+        if "email_type" in filters:
+            query = query.where(EmailMessageDB.email_type == filters["email_type"])
+
+        if "status" in filters:
+            # Map status to delivery_status or other fields
+            status = filters["status"]
+            if status == "sent":
+                query = query.where(EmailMessageDB.sent_at.isnot(None))
+            elif status == "opened":
+                query = query.where(EmailMessageDB.opened == True)  # noqa: E712
+            elif status == "replied":
+                query = query.where(EmailMessageDB.replied == True)  # noqa: E712
+            elif status == "bounced":
+                query = query.where(EmailMessageDB.bounced == True)  # noqa: E712
+
+        # Count total
+        count_query = select(func.count()).select_from(query.subquery())
+        total_result = await self.db.execute(count_query)
+        total = total_result.scalar_one()
+
+        # Apply pagination
+        offset = (page - 1) * page_size
+        query = query.order_by(EmailMessageDB.created_at.desc()).offset(offset).limit(page_size)
+
+        result = await self.db.execute(query)
+        emails = list(result.scalars().all())
+
+        return emails, total
+
+    async def find_by_message_id(self, message_id_header: str) -> EmailMessageDB | None:
+        """Find email by Message-ID header.
+
+        Args:
+            message_id_header: SMTP Message-ID
+
+        Returns:
+            Email or None
+        """
+        result = await self.db.execute(
+            select(EmailMessageDB).where(
+                EmailMessageDB.message_id_header == message_id_header
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def find_by_subject_and_recipient(
+        self,
+        subject: str,
+        recipient: str,
+    ) -> EmailMessageDB | None:
+        """Find email by subject and recipient (for reply matching).
+
+        Args:
+            subject: Email subject
+            recipient: Recipient email (who sent the reply, was our recipient)
+
+        Returns:
+            Email or None
+        """
+        from app.models.db import EmployerContactDB
+
+        # Join with contacts to find by recipient email
+        result = await self.db.execute(
+            select(EmailMessageDB)
+            .join(EmployerContactDB, EmailMessageDB.contact_id == EmployerContactDB.id)
+            .where(
+                and_(
+                    EmailMessageDB.subject == subject,
+                    EmployerContactDB.email == recipient,
+                )
+            )
+            .order_by(EmailMessageDB.sent_at.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
