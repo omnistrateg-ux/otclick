@@ -1,0 +1,106 @@
+"use client"
+
+import { useState } from "react"
+import Link from "next/link"
+import { usePathname } from "next/navigation"
+import { cn } from "@/lib/utils"
+import { Button } from "@/components/ui/button"
+import {
+  LayoutDashboard,
+  Users,
+  Mail,
+  BarChart3,
+  UserCheck,
+  Settings,
+  Zap,
+  Menu,
+  X,
+} from "lucide-react"
+
+const navigation = [
+  { name: "Дашборд", href: "/", icon: LayoutDashboard },
+  { name: "Лиды", href: "/leads", icon: Users },
+  { name: "Кампании", href: "/campaigns", icon: Mail },
+  { name: "Аналитика", href: "/analytics", icon: BarChart3 },
+  { name: "Тёплые лиды", href: "/handoffs", icon: UserCheck },
+  { name: "Настройки", href: "/settings", icon: Settings },
+]
+
+export function MobileNav() {
+  const [isOpen, setIsOpen] = useState(false)
+  const pathname = usePathname()
+
+  return (
+    <div className="lg:hidden">
+      {/* Mobile menu button */}
+      <Button
+        variant="ghost"
+        size="icon"
+        className="fixed top-4 left-4 z-50"
+        onClick={() => setIsOpen(!isOpen)}
+      >
+        {isOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+      </Button>
+
+      {/* Overlay */}
+      {isOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm"
+          onClick={() => setIsOpen(false)}
+        />
+      )}
+
+      {/* Mobile menu */}
+      <div
+        className={cn(
+          "fixed inset-y-0 left-0 z-50 w-72 transform bg-zinc-950 transition-transform duration-300 ease-in-out border-r border-zinc-800",
+          isOpen ? "translate-x-0" : "-translate-x-full"
+        )}
+      >
+        {/* Logo */}
+        <div className="flex h-16 items-center gap-3 border-b border-zinc-800 px-6">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-600 to-orange-500">
+            <Zap className="h-5 w-5 text-white" />
+          </div>
+          <div>
+            <h1 className="text-lg font-bold text-zinc-100">Отклик</h1>
+            <p className="text-xs text-zinc-500">Lead Acquisition</p>
+          </div>
+        </div>
+
+        {/* Navigation */}
+        <nav className="flex-1 space-y-1 p-4">
+          {navigation.map((item) => {
+            const isActive =
+              pathname === item.href ||
+              (item.href !== "/" && pathname.startsWith(item.href))
+
+            return (
+              <Link
+                key={item.name}
+                href={item.href}
+                onClick={() => setIsOpen(false)}
+                className={cn(
+                  "group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                  isActive
+                    ? "bg-indigo-600/20 text-indigo-400"
+                    : "text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-100"
+                )}
+              >
+                <item.icon
+                  className={cn(
+                    "h-5 w-5 transition-colors",
+                    isActive
+                      ? "text-indigo-400"
+                      : "text-zinc-500 group-hover:text-zinc-300"
+                  )}
+                />
+                {item.name}
+              </Link>
+            )
+          })}
+        </nav>
+      </div>
+    </div>
+  )
+}
