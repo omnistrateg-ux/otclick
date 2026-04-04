@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   Users,
   Mail,
+  Send,
   BarChart3,
   UserCheck,
   Settings,
@@ -17,6 +18,7 @@ const navigation = [
   { name: "Дашборд", href: "/", icon: LayoutDashboard },
   { name: "Лиды", href: "/leads", icon: Users },
   { name: "Кампании", href: "/campaigns", icon: Mail },
+  { name: "Письма", href: "/emails", icon: Send },
   { name: "Аналитика", href: "/analytics", icon: BarChart3 },
   { name: "Тёплые лиды", href: "/handoffs", icon: UserCheck },
 ]

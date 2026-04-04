@@ -104,6 +104,44 @@ export interface LeadEmail {
   replied_at?: string
 }
 
+export interface Email {
+  id: string
+  lead_id: string
+  company_name: string
+  contact_name: string
+  contact_email: string
+  subject: string
+  body: string
+  status: "sent" | "delivered" | "opened" | "replied" | "bounced"
+  sent_at: string
+  opened_at?: string
+  replied_at?: string
+  thread?: EmailThread[]
+}
+
+export interface EmailThread {
+  id: string
+  direction: "outbound" | "inbound"
+  subject: string
+  body: string
+  sent_at: string
+}
+
+export interface EmailsFilters {
+  status?: string
+  search?: string
+  page?: number
+  limit?: number
+}
+
+export interface EmailsResponse {
+  items: Email[]
+  total: number
+  page: number
+  limit: number
+  pages: number
+}
+
 export interface LeadDetail extends Lead {
   events: LeadEvent[]
   emails: LeadEmail[]
@@ -224,4 +262,18 @@ export const api = {
     const response = await fetcher<PaginatedResponse<Handoff>>("/handoffs")
     return response.items || []
   },
+
+  // Emails
+  getEmails: (filters?: EmailsFilters) => {
+    const params = new URLSearchParams()
+    if (filters?.status) params.set("status", filters.status)
+    if (filters?.search) params.set("search", filters.search)
+    if (filters?.page) params.set("page", String(filters.page))
+    if (filters?.limit) params.set("limit", String(filters.limit))
+
+    const query = params.toString()
+    return fetcher<EmailsResponse>(`/emails${query ? `?${query}` : ""}`)
+  },
+
+  getEmail: (id: string) => fetcher<Email>(`/emails/${id}`),
 }
