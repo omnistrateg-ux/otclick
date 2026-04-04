@@ -5,10 +5,18 @@
 """
 
 from datetime import datetime, timezone
+from enum import Enum
+from typing import Any
 
 UTC = timezone.utc
-from enum import StrEnum
-from typing import Any
+
+# Python 3.10 compatibility: StrEnum was added in 3.11
+try:
+    from enum import StrEnum
+except ImportError:
+    class StrEnum(str, Enum):
+        """String enum for Python 3.10 compatibility."""
+        pass
 from uuid import uuid4
 
 from pydantic import BaseModel, Field

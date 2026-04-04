@@ -6,8 +6,16 @@
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from enum import StrEnum
+from enum import Enum
 from typing import Any
+
+# Python 3.10 compatibility: StrEnum was added in 3.11
+try:
+    from enum import StrEnum
+except ImportError:
+    class StrEnum(str, Enum):
+        """String enum for Python 3.10 compatibility."""
+        pass
 
 from app.models.domain import EmployerLead
 from app.models.enums import LeadStatus
