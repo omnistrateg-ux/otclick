@@ -143,14 +143,14 @@ class EmployerContact(BaseModel):
 
     # Каналы связи
     email: EmailStr | None = None
-    email_verified: bool = False
+    email_verified: bool | None = False
     email_verification_date: datetime | None = None
     phone: str | None = None
     linkedin_url: str | None = None
     telegram: str | None = None
 
     # Приоритет
-    is_primary: bool = False
+    is_primary: bool | None = False
     contact_source: str | None = None
 
     # Compliance

@@ -262,7 +262,8 @@ export const api = {
   getFunnel: async (): Promise<FunnelData[]> => {
     const response = await fetcher<FunnelResponse>("/analytics/funnel")
     // Transform object {status: count} to array [{status, count, label}]
-    const funnelObj = response.funnel || {}
+    // API returns object directly, not wrapped in {funnel: ...}
+    const funnelObj = response.funnel || response || {}
     return Object.entries(funnelObj).map(([status, count]) => ({
       status: status.toUpperCase(),
       count,
