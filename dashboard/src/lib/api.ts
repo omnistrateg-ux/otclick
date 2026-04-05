@@ -159,6 +159,21 @@ export interface HealthStatus {
   uptime?: number
 }
 
+export interface DiscoverCompany {
+  name: string
+  vacancy: string
+  lead_id: string
+  status: "created" | "exists" | "error"
+}
+
+export interface DiscoverResponse {
+  task_id: string
+  status: string
+  leads_found: number
+  leads_created: number
+  companies: DiscoverCompany[]
+}
+
 export interface LeadsFilters {
   status?: string
   industry?: string
@@ -230,8 +245,8 @@ export const api = {
 
   getLead: (id: string) => fetcher<LeadDetail>(`/leads/${id}`),
 
-  discoverLeads: (params: { industry?: string; city?: string }) =>
-    fetcher<{ task_id: string }>("/leads/discover", {
+  discoverLeads: (params: { industry?: string; city?: string; max_leads?: number }) =>
+    fetcher<DiscoverResponse>("/leads/discover", {
       method: "POST",
       body: JSON.stringify(params),
     }),

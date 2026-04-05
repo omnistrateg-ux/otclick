@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
+import Link from "next/link"
 import {
   Dialog,
   DialogContent,
@@ -11,20 +12,20 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Slider } from "@/components/ui/slider"
 import { Switch } from "@/components/ui/switch"
 import { Badge } from "@/components/ui/badge"
-import { api } from "@/lib/api"
+import { api, DiscoverResponse } from "@/lib/api"
 import {
   Rocket,
   Building2,
   MapPin,
   Users,
   Zap,
-  AlertCircle,
   CheckCircle,
   Loader2,
+  AlertCircle,
+  ExternalLink,
 } from "lucide-react"
 
 const INDUSTRIES = [
@@ -67,23 +68,28 @@ export function DiscoveryModal({ open, onOpenChange }: DiscoveryModalProps) {
   const [autoEnrich, setAutoEnrich] = useState(true)
   const [autoScore, setAutoScore] = useState(true)
   const [autoOutreach, setAutoOutreach] = useState(false)
-  const [step, setStep] = useState(1)
+  const [step, setStep] = useState<"config" | "loading" | "results" | "error">("config")
+  const [result, setResult] = useState<DiscoverResponse | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   const queryClient = useQueryClient()
 
   const mutation = useMutation({
     mutationFn: () =>
       api.discoverLeads({
-        industry: selectedIndustries.join(","),
-        city: selectedCities.join(","),
+        industry: selectedIndustries.join(",") || undefined,
+        city: selectedCities.join(",") || undefined,
+        max_leads: leadsCount,
       }),
-    onSuccess: () => {
+    onSuccess: (data) => {
+      setResult(data)
+      setStep("results")
       queryClient.invalidateQueries({ queryKey: ["leads"] })
       queryClient.invalidateQueries({ queryKey: ["funnel"] })
-      setStep(3)
     },
-    onError: () => {
-      setStep(1)
+    onError: (err) => {
+      setError(err instanceof Error ? err.message : "Ошибка запуска Discovery")
+      setStep("error")
     },
   })
 
@@ -100,14 +106,17 @@ export function DiscoveryModal({ open, onOpenChange }: DiscoveryModalProps) {
   }
 
   const handleLaunch = () => {
-    setStep(2)
+    setStep("loading")
+    setError(null)
     mutation.mutate()
   }
 
   const handleClose = () => {
     onOpenChange(false)
     setTimeout(() => {
-      setStep(1)
+      setStep("config")
+      setResult(null)
+      setError(null)
       setSelectedIndustries([])
       setSelectedCities([])
       setLeadsCount(50)
@@ -117,7 +126,7 @@ export function DiscoveryModal({ open, onOpenChange }: DiscoveryModalProps) {
   return (
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        {step === 1 && (
+        {step === "config" && (
           <>
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2 text-xl">
@@ -284,44 +293,122 @@ export function DiscoveryModal({ open, onOpenChange }: DiscoveryModalProps) {
           </>
         )}
 
-        {step === 2 && (
+        {step === "loading" && (
           <div className="py-12 text-center">
             <div className="flex justify-center mb-6">
               <div className="relative">
                 <div className="h-20 w-20 rounded-full bg-indigo-600/20 flex items-center justify-center">
                   <Loader2 className="h-10 w-10 text-indigo-400 animate-spin" />
                 </div>
-                <div className="absolute inset-0 rounded-full border-4 border-indigo-500/30 animate-ping" />
               </div>
             </div>
             <h3 className="text-xl font-semibold text-zinc-100 mb-2">
-              Запускаем Discovery...
+              Ищем работодателей...
             </h3>
             <p className="text-zinc-400">
-              Поиск работодателей по заданным критериям
+              Это может занять несколько секунд
             </p>
-            <div className="mt-6 space-y-2 text-sm text-zinc-500">
-              <p>Отрасли: {selectedIndustries.length}</p>
-              <p>Города: {selectedCities.length}</p>
-              <p>Цель: {leadsCount} лидов</p>
+          </div>
+        )}
+
+        {step === "results" && result && (
+          <div className="py-6">
+            <div className="flex justify-center mb-6">
+              <div className="h-16 w-16 rounded-full bg-emerald-600/20 flex items-center justify-center">
+                <CheckCircle className="h-8 w-8 text-emerald-400" />
+              </div>
+            </div>
+
+            <h3 className="text-xl font-semibold text-zinc-100 mb-2 text-center">
+              Discovery завершён
+            </h3>
+
+            {/* Stats */}
+            <div className="grid grid-cols-2 gap-4 my-6">
+              <div className="p-4 rounded-lg bg-zinc-800/50 border border-zinc-700 text-center">
+                <p className="text-3xl font-bold text-indigo-400">{result.leads_found}</p>
+                <p className="text-sm text-zinc-400">Найдено</p>
+              </div>
+              <div className="p-4 rounded-lg bg-zinc-800/50 border border-zinc-700 text-center">
+                <p className="text-3xl font-bold text-emerald-400">{result.leads_created}</p>
+                <p className="text-sm text-zinc-400">Создано</p>
+              </div>
+            </div>
+
+            {/* Companies list */}
+            {result.companies && result.companies.length > 0 && (
+              <div className="space-y-2">
+                <h4 className="text-sm font-medium text-zinc-300 mb-3">
+                  Найденные компании ({result.companies.length})
+                </h4>
+                <div className="max-h-60 overflow-y-auto space-y-2">
+                  {result.companies.map((company, idx) => (
+                    <div
+                      key={company.lead_id || idx}
+                      className="flex items-center justify-between p-3 rounded-lg bg-zinc-800/50 border border-zinc-700"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <Building2 className="h-4 w-4 text-zinc-500 shrink-0" />
+                        <div className="min-w-0">
+                          <p className="font-medium text-zinc-200 truncate">
+                            {company.name}
+                          </p>
+                          <p className="text-xs text-zinc-500 truncate">
+                            {company.vacancy}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <Badge
+                          variant={company.status === "created" ? "success" : "secondary"}
+                          className="text-xs"
+                        >
+                          {company.status === "created" ? "Новый" : "Существует"}
+                        </Badge>
+                        {company.lead_id && company.status === "created" && (
+                          <Link
+                            href={`/leads/${company.lead_id}`}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
+                              <ExternalLink className="h-3.5 w-3.5" />
+                            </Button>
+                          </Link>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="mt-6 flex justify-center">
+              <Button onClick={handleClose}>Закрыть</Button>
             </div>
           </div>
         )}
 
-        {step === 3 && (
+        {step === "error" && (
           <div className="py-12 text-center">
             <div className="flex justify-center mb-6">
-              <div className="h-20 w-20 rounded-full bg-emerald-600/20 flex items-center justify-center">
-                <CheckCircle className="h-10 w-10 text-emerald-400" />
+              <div className="h-20 w-20 rounded-full bg-red-600/20 flex items-center justify-center">
+                <AlertCircle className="h-10 w-10 text-red-400" />
               </div>
             </div>
             <h3 className="text-xl font-semibold text-zinc-100 mb-2">
-              Discovery запущен!
+              Ошибка
             </h3>
             <p className="text-zinc-400 mb-6">
-              Задача добавлена в очередь обработки
+              {error || "Не удалось запустить Discovery"}
             </p>
-            <Button onClick={handleClose}>Закрыть</Button>
+            <div className="flex justify-center gap-3">
+              <Button variant="outline" onClick={handleClose}>
+                Закрыть
+              </Button>
+              <Button onClick={() => setStep("config")}>
+                Попробовать снова
+              </Button>
+            </div>
           </div>
         )}
       </DialogContent>
