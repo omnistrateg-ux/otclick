@@ -3,9 +3,7 @@
 Интеграция с hh.ru API, Avito, 2GIS согласно ARCHITECTURE.md раздел 9.
 """
 
-from datetime import datetime, timezone
-
-UTC = timezone.utc
+from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
@@ -170,9 +168,9 @@ def create_lead_from_hh(employer_data: dict[str, Any]) -> EmployerLead:
         source_url=employer_data.get("alternate_url"),
         city=city,
         status=LeadStatus.LEAD_FOUND,
-        status_changed_at=datetime.now(UTC),
-        created_at=datetime.now(UTC),
-        updated_at=datetime.now(UTC),
+        status_changed_at=datetime.utcnow(),
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
     )
 
 
