@@ -51,6 +51,14 @@ export interface Campaign {
   created_at: string
 }
 
+export interface CampaignCreateRequest {
+  name: string
+  industries?: string[]
+  regions?: string[]
+  daily_discovery_limit?: number
+  auto_start?: boolean
+}
+
 export interface FunnelData {
   status: string
   count: number
@@ -257,6 +265,11 @@ export const api = {
     return response.items || []
   },
   getCampaign: (id: string) => fetcher<Campaign>(`/campaigns/${id}`),
+  createCampaign: (data: CampaignCreateRequest) =>
+    fetcher<Campaign>("/campaigns", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
 
   // Analytics
   getFunnel: async (): Promise<FunnelData[]> => {

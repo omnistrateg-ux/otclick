@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import {
   Dialog,
   DialogContent,
@@ -30,7 +31,9 @@ import {
   Loader2,
   Calendar,
   Settings,
+  AlertCircle,
 } from "lucide-react"
+import { api } from "@/lib/api"
 
 interface CampaignModalProps {
   open: boolean
@@ -45,6 +48,7 @@ const EMAIL_TEMPLATES = [
 ]
 
 export function CampaignModal({ open, onOpenChange }: CampaignModalProps) {
+  const router = useRouter()
   const [step, setStep] = useState(1)
   const [name, setName] = useState("")
   const [template, setTemplate] = useState("")
@@ -54,13 +58,25 @@ export function CampaignModal({ open, onOpenChange }: CampaignModalProps) {
   const [trackClicks, setTrackClicks] = useState(true)
   const [autoFollowup, setAutoFollowup] = useState(true)
   const [isLaunching, setIsLaunching] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  const handleLaunch = () => {
+  const handleLaunch = async () => {
     setIsLaunching(true)
-    setTimeout(() => {
-      setIsLaunching(false)
+    setError(null)
+
+    try {
+      await api.createCampaign({
+        name,
+        daily_discovery_limit: dailyLimit,
+        auto_start: true,
+      })
       setStep(2)
-    }, 2000)
+    } catch (err) {
+      console.error("Failed to create campaign:", err)
+      setError(err instanceof Error ? err.message : "Ошибка создания кампании")
+    } finally {
+      setIsLaunching(false)
+    }
   }
 
   const handleClose = () => {
@@ -69,7 +85,13 @@ export function CampaignModal({ open, onOpenChange }: CampaignModalProps) {
       setStep(1)
       setName("")
       setTemplate("")
+      setError(null)
     }, 300)
+  }
+
+  const handleGoToCampaigns = () => {
+    handleClose()
+    router.push("/campaigns")
   }
 
   return (
@@ -229,6 +251,14 @@ export function CampaignModal({ open, onOpenChange }: CampaignModalProps) {
                 </div>
                 <p className="text-2xl font-bold text-emerald-400">247</p>
               </div>
+
+              {/* Error Message */}
+              {error && (
+                <div className="flex items-center gap-3 p-4 rounded-lg bg-red-600/20 border border-red-500/30">
+                  <AlertCircle className="h-5 w-5 text-red-400 flex-shrink-0" />
+                  <p className="text-sm text-red-400">{error}</p>
+                </div>
+              )}
             </div>
 
             <DialogFooter>
@@ -259,7 +289,7 @@ export function CampaignModal({ open, onOpenChange }: CampaignModalProps) {
               </div>
             </div>
             <h3 className="text-xl font-semibold text-zinc-100 mb-2">
-              Кампания запущена!
+              Кампания создана!
             </h3>
             <p className="text-zinc-400 mb-2">"{name}"</p>
             <p className="text-sm text-zinc-500 mb-6">
@@ -269,10 +299,7 @@ export function CampaignModal({ open, onOpenChange }: CampaignModalProps) {
               <Button variant="outline" onClick={handleClose}>
                 Закрыть
               </Button>
-              <Button onClick={() => {
-                handleClose()
-                window.location.href = "/campaigns"
-              }}>
+              <Button onClick={handleGoToCampaigns}>
                 Перейти к кампаниям
               </Button>
             </div>
