@@ -485,3 +485,127 @@ async def delete_lead(lead_id: str) -> dict[str, str]:
         await lead_repo.delete(lead_id)
 
         return {"message": f"Lead {lead_id} deleted"}
+
+
+# Discovery models
+class DiscoverRequest(BaseModel):
+    """Discovery request parameters."""
+
+    industry: str | None = None
+    city: str | None = None
+    max_leads: int = Field(default=10, ge=1, le=100)
+
+
+class DiscoverCompany(BaseModel):
+    """Discovered company info."""
+
+    name: str
+    vacancy: str | None = None
+    lead_id: str | None = None
+    status: str  # "created", "duplicate", "error"
+
+
+class DiscoverResponse(BaseModel):
+    """Discovery response."""
+
+    task_id: str
+    status: str
+    leads_found: int
+    leads_created: int
+    companies: list[DiscoverCompany]
+
+
+@router.post("/discover", response_model=DiscoverResponse)
+async def discover_leads(request: DiscoverRequest) -> DiscoverResponse:
+    """Запуск Discovery — парсим HH.ru и создаём лидов.
+
+    Реальный поиск компаний через HH.ru API.
+    """
+    from uuid import uuid4
+
+    from app.storage.repositories.lead_repo import LeadRepository
+    from app.tools.discovery_tools import create_lead_from_hh, find_employers_hh, get_employer_vacancies
+
+    task_id = str(uuid4())
+    companies: list[DiscoverCompany] = []
+    leads_created = 0
+
+    # Map city names to HH.ru area IDs
+    area_map = {
+        "Москва": 1,
+        "Санкт-Петербург": 2,
+        "Новосибирск": 4,
+        "Екатеринбург": 3,
+        "Казань": 88,
+        "Нижний Новгород": 66,
+        "Челябинск": 104,
+        "Самара": 78,
+        "Ростов-на-Дону": 76,
+        "Уфа": 99,
+    }
+
+    area_id = area_map.get(request.city, 1) if request.city else 1
+
+    # Fetch employers from HH.ru
+    employers = await find_employers_hh(
+        query=request.industry,
+        area=area_id,
+        per_page=request.max_leads,
+    )
+
+    async with async_session_factory() as db:
+        lead_repo = LeadRepository(db)
+
+        for employer_data in employers:
+            company_name = employer_data.get("name", "Unknown")
+
+            # Get first vacancy for context
+            vacancy_name = None
+            try:
+                employer_id = str(employer_data.get("id", ""))
+                if employer_id:
+                    vacancies = await get_employer_vacancies(employer_id, per_page=1)
+                    if vacancies:
+                        vacancy_name = vacancies[0].get("name")
+            except Exception:
+                pass
+
+            # Check for duplicate
+            existing = await lead_repo.find_by_company_name(company_name)
+            if existing:
+                companies.append(DiscoverCompany(
+                    name=company_name,
+                    vacancy=vacancy_name,
+                    status="duplicate",
+                ))
+                continue
+
+            # Create lead
+            try:
+                lead = create_lead_from_hh(employer_data)
+                created_lead = await lead_repo.create(lead)
+
+                companies.append(DiscoverCompany(
+                    name=company_name,
+                    vacancy=vacancy_name,
+                    lead_id=str(created_lead.id),
+                    status="created",
+                ))
+                leads_created += 1
+            except Exception as e:
+                companies.append(DiscoverCompany(
+                    name=company_name,
+                    vacancy=vacancy_name,
+                    status="error",
+                ))
+
+        # IMPORTANT: Commit the transaction
+        await db.commit()
+
+    return DiscoverResponse(
+        task_id=task_id,
+        status="completed",
+        leads_found=len(employers),
+        leads_created=leads_created,
+        companies=companies,
+    )
