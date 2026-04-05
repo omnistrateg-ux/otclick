@@ -6,8 +6,8 @@ UTC = timezone.utc
 
 
 def utcnow() -> datetime:
-    """Return current UTC datetime (timezone-aware)."""
-    return datetime.now(UTC)
+    """Return current UTC datetime (naive, without timezone)."""
+    return datetime.utcnow()
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
@@ -68,7 +68,7 @@ class EmployerLead(BaseModel):
     archived_reason: str | None = None
 
     # Compliance
-    opted_out: bool = False
+    opted_out: bool | None = False
     opted_out_at: datetime | None = None
     do_not_contact_until: datetime | None = None
 
@@ -154,8 +154,8 @@ class EmployerContact(BaseModel):
     contact_source: str | None = None
 
     # Compliance
-    opted_out: bool = False
-    bounce_count: int = 0
+    opted_out: bool | None = False
+    bounce_count: int | None = 0
     last_bounce_at: datetime | None = None
 
 

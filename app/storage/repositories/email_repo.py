@@ -464,7 +464,7 @@ class EmailRepository:
 
         # Apply pagination
         offset = (page - 1) * page_size
-        query = query.order_by(EmailMessageDB.created_at.desc()).offset(offset).limit(page_size)
+        query = query.order_by(EmailMessageDB.sent_at.desc()).offset(offset).limit(page_size)
 
         result = await self.db.execute(query)
         emails = list(result.scalars().all())
