@@ -20,7 +20,6 @@ import {
   Rocket,
   Mail,
   Users,
-  TrendingUp,
   Zap,
   ArrowRight,
   Building2,
@@ -176,9 +175,8 @@ export default function DashboardPage() {
                     <p className="text-4xl font-bold text-zinc-100 mt-1">
                       {formatNumber(totalLeads)}
                     </p>
-                    <p className="text-xs text-emerald-400 mt-2 flex items-center gap-1">
-                      <TrendingUp className="h-3 w-3" />
-                      +12% за неделю
+                    <p className="text-xs text-zinc-500 mt-2">
+                      Всего работодателей в базе
                     </p>
                   </div>
                   <div className="h-16 w-16 rounded-2xl bg-indigo-600/20 flex items-center justify-center">

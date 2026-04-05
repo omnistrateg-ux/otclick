@@ -1,119 +1,100 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useQuery } from "@tanstack/react-query"
 import { Card, CardContent } from "@/components/ui/card"
+import { Skeleton } from "@/components/ui/skeleton"
+import { api } from "@/lib/api"
 import {
-  TrendingUp,
-  TrendingDown,
   Users,
   Mail,
   Eye,
   MessageSquare,
-  DollarSign,
   Target,
+  Building2,
 } from "lucide-react"
 
-interface StatItem {
-  label: string
-  value: number
-  previousValue: number
-  format: "number" | "percent" | "currency"
-  icon: typeof Users
-  color: string
-}
-
-const stats: StatItem[] = [
-  {
-    label: "Новых лидов сегодня",
-    value: 47,
-    previousValue: 38,
-    format: "number",
-    icon: Users,
-    color: "text-indigo-400",
-  },
-  {
-    label: "Писем отправлено",
-    value: 156,
-    previousValue: 142,
-    format: "number",
-    icon: Mail,
-    color: "text-emerald-400",
-  },
-  {
-    label: "Open Rate",
-    value: 34.5,
-    previousValue: 31.2,
-    format: "percent",
-    icon: Eye,
-    color: "text-amber-400",
-  },
-  {
-    label: "Reply Rate",
-    value: 8.2,
-    previousValue: 7.8,
-    format: "percent",
-    icon: MessageSquare,
-    color: "text-orange-400",
-  },
-  {
-    label: "Конверсия",
-    value: 4.7,
-    previousValue: 4.2,
-    format: "percent",
-    icon: Target,
-    color: "text-rose-400",
-  },
-  {
-    label: "Расходы сегодня",
-    value: 12.45,
-    previousValue: 15.20,
-    format: "currency",
-    icon: DollarSign,
-    color: "text-violet-400",
-  },
-]
-
-function formatValue(value: number, format: "number" | "percent" | "currency") {
-  switch (format) {
-    case "percent":
-      return `${value.toFixed(1)}%`
-    case "currency":
-      return `$${value.toFixed(2)}`
-    default:
-      return value.toLocaleString("ru-RU")
-  }
-}
-
 export function QuickStats() {
-  const [animatedStats, setAnimatedStats] = useState(
-    stats.map((s) => ({ ...s, displayValue: 0 }))
-  )
+  const { data: leads, isLoading: leadsLoading } = useQuery({
+    queryKey: ["leads", { limit: 1 }],
+    queryFn: () => api.getLeads({ limit: 1 }),
+  })
 
-  useEffect(() => {
-    const duration = 1000
-    const steps = 30
-    const interval = duration / steps
+  const { data: emails, isLoading: emailsLoading } = useQuery({
+    queryKey: ["emails", { limit: 1 }],
+    queryFn: () => api.getEmails({ limit: 1 }),
+  })
 
-    let step = 0
-    const timer = setInterval(() => {
-      step++
-      setAnimatedStats(
-        stats.map((stat) => ({
-          ...stat,
-          displayValue: (stat.value * step) / steps,
-        }))
-      )
-      if (step >= steps) clearInterval(timer)
-    }, interval)
+  const { data: funnel, isLoading: funnelLoading } = useQuery({
+    queryKey: ["funnel"],
+    queryFn: api.getFunnel,
+  })
 
-    return () => clearInterval(timer)
-  }, [])
+  const { data: handoffs, isLoading: handoffsLoading } = useQuery({
+    queryKey: ["handoffs"],
+    queryFn: api.getHandoffs,
+  })
+
+  const isLoading = leadsLoading || emailsLoading || funnelLoading || handoffsLoading
+
+  const totalLeads = leads?.total || 0
+  const totalEmails = emails?.total || 0
+  const qualifiedLeads = funnel?.find((f) => f.status === "QUALIFIED")?.count || 0
+  const sentLeads = funnel?.find((f) => f.status === "OUTREACH_SENT")?.count || 0
+  const repliedLeads = funnel?.find((f) => f.status === "REPLY_RECEIVED")?.count || 0
+  const warmLeads = handoffs?.length || 0
+
+  const stats = [
+    {
+      label: "Всего лидов",
+      value: totalLeads,
+      icon: Users,
+      color: "text-indigo-400",
+    },
+    {
+      label: "Писем отправлено",
+      value: totalEmails,
+      icon: Mail,
+      color: "text-emerald-400",
+    },
+    {
+      label: "Квалифицированных",
+      value: qualifiedLeads,
+      icon: Target,
+      color: "text-amber-400",
+    },
+    {
+      label: "Отправлено outreach",
+      value: sentLeads,
+      icon: Building2,
+      color: "text-orange-400",
+    },
+    {
+      label: "Получено ответов",
+      value: repliedLeads,
+      icon: MessageSquare,
+      color: "text-rose-400",
+    },
+    {
+      label: "Тёплых лидов",
+      value: warmLeads,
+      icon: Eye,
+      color: "text-violet-400",
+    },
+  ]
+
+  if (isLoading) {
+    return (
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        {[1, 2, 3, 4, 5, 6].map((i) => (
+          <Skeleton key={i} className="h-24" />
+        ))}
+      </div>
+    )
+  }
 
   return (
     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-      {animatedStats.map((stat, index) => {
-        const change = ((stat.value - stat.previousValue) / stat.previousValue) * 100
-        const isPositive = change > 0
+      {stats.map((stat, index) => {
         const Icon = stat.icon
 
         return (
@@ -124,21 +105,9 @@ export function QuickStats() {
             <CardContent className="pt-4 pb-3">
               <div className="flex items-center justify-between mb-2">
                 <Icon className={`h-5 w-5 ${stat.color}`} />
-                <div
-                  className={`flex items-center gap-0.5 text-xs ${
-                    isPositive ? "text-emerald-400" : "text-rose-400"
-                  }`}
-                >
-                  {isPositive ? (
-                    <TrendingUp className="h-3 w-3" />
-                  ) : (
-                    <TrendingDown className="h-3 w-3" />
-                  )}
-                  {Math.abs(change).toFixed(1)}%
-                </div>
               </div>
               <p className="text-2xl font-bold text-zinc-100 tabular-nums">
-                {formatValue(stat.displayValue, stat.format)}
+                {stat.value.toLocaleString("ru-RU")}
               </p>
               <p className="text-xs text-zinc-500 mt-1">{stat.label}</p>
             </CardContent>
