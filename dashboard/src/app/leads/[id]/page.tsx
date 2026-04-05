@@ -76,8 +76,8 @@ export default function LeadDetailPage({
   return (
     <div className="min-h-screen">
       <Header
-        title={lead.company_name}
-        description={`${lead.industry} • ${lead.city}`}
+        title={lead.company_name || "Компания"}
+        description={[lead.industry, lead.city].filter(Boolean).join(" • ") || "Нет данных"}
       />
 
       <div className="p-6 space-y-6">
@@ -121,7 +121,7 @@ export default function LeadDetailPage({
                         <StatusBadge status={lead.status} />
                         <div className="flex items-center gap-1 text-amber-400">
                           <Star className="h-4 w-4 fill-current" />
-                          <span className="font-medium">{lead.score}</span>
+                          <span className="font-medium">{lead.score ?? 0}</span>
                         </div>
                       </div>
                     </div>
@@ -134,14 +134,14 @@ export default function LeadDetailPage({
                     <Briefcase className="h-5 w-5 text-zinc-500" />
                     <div>
                       <p className="text-xs text-zinc-500">Отрасль</p>
-                      <p className="font-medium text-zinc-200">{lead.industry}</p>
+                      <p className="font-medium text-zinc-200">{lead.industry || "Не указана"}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3 rounded-lg bg-zinc-800/50 p-3">
                     <MapPin className="h-5 w-5 text-zinc-500" />
                     <div>
                       <p className="text-xs text-zinc-500">Город</p>
-                      <p className="font-medium text-zinc-200">{lead.city}</p>
+                      <p className="font-medium text-zinc-200">{lead.city || "Не указан"}</p>
                     </div>
                   </div>
                   {lead.website && (
@@ -367,7 +367,7 @@ export default function LeadDetailPage({
                   <div className="flex justify-between">
                     <span className="text-zinc-500">ID</span>
                     <span className="font-mono text-xs text-zinc-500">
-                      {lead.id.slice(0, 8)}...
+                      {lead.id?.slice(0, 8) || "N/A"}...
                     </span>
                   </div>
                 </div>
