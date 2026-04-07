@@ -519,12 +519,13 @@ class DiscoverResponse(BaseModel):
 async def discover_leads(request: DiscoverRequest) -> DiscoverResponse:
     """Запуск Discovery — парсим HH.ru и создаём лидов.
 
-    Реальный поиск компаний через HH.ru API.
+    Ищет через /vacancies API и извлекает уникальных работодателей.
+    Автоматически обогащает доменом и генерирует hr@домен.
     """
     from uuid import uuid4
 
     from app.storage.repositories.lead_repo import LeadRepository
-    from app.tools.discovery_tools import create_lead_from_hh, find_employers_hh, get_employer_vacancies
+    from app.tools.discovery_tools import create_lead_with_contact, find_employers_hh
 
     task_id = str(uuid4())
     companies: list[DiscoverCompany] = []
@@ -546,7 +547,7 @@ async def discover_leads(request: DiscoverRequest) -> DiscoverResponse:
 
     area_id = area_map.get(request.city, 1) if request.city else 1
 
-    # Fetch employers from HH.ru
+    # Fetch employers from HH.ru vacancies (more results than /employers)
     employers = await find_employers_hh(
         query=request.industry,
         area=area_id,
@@ -558,17 +559,8 @@ async def discover_leads(request: DiscoverRequest) -> DiscoverResponse:
 
         for employer_data in employers:
             company_name = employer_data.get("name", "Unknown")
-
-            # Get first vacancy for context
-            vacancy_name = None
-            try:
-                employer_id = str(employer_data.get("id", ""))
-                if employer_id:
-                    vacancies = await get_employer_vacancies(employer_id, per_page=1)
-                    if vacancies:
-                        vacancy_name = vacancies[0].get("name")
-            except Exception:
-                pass
+            # Vacancy name comes from the vacancies search
+            vacancy_name = employer_data.get("sample_vacancy")
 
             # Check for duplicate
             existing = await lead_repo.find_by_company_name(company_name)
@@ -580,9 +572,9 @@ async def discover_leads(request: DiscoverRequest) -> DiscoverResponse:
                 ))
                 continue
 
-            # Create lead
+            # Create lead with auto-enrichment (domain + hr@domain)
             try:
-                lead = create_lead_from_hh(employer_data)
+                lead, email = await create_lead_with_contact(employer_data)
                 created_lead = await lead_repo.create(lead)
 
                 companies.append(DiscoverCompany(
