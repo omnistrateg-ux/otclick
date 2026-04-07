@@ -1,12 +1,10 @@
 "use client"
 
-import { useState } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useState, useEffect } from "react"
 import Link from "next/link"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Progress } from "@/components/ui/progress"
 import { Skeleton } from "@/components/ui/skeleton"
 import { FunnelChart } from "@/components/charts/funnel-chart"
 import { DiscoveryModal } from "@/components/discovery-modal"
@@ -14,8 +12,8 @@ import { CampaignModal } from "@/components/campaign-modal"
 import { ActiveTasks } from "@/components/active-tasks"
 import { QuickStats } from "@/components/quick-stats"
 import { StatusBadge } from "@/components/status-badge"
-import { api } from "@/lib/api"
-import { formatNumber, formatDate } from "@/lib/utils"
+import { api, FunnelData, Lead, Handoff, HealthStatus } from "@/lib/api"
+import { formatNumber } from "@/lib/utils"
 import {
   Rocket,
   Mail,
@@ -33,34 +31,74 @@ import {
   RefreshCw,
 } from "lucide-react"
 
+interface DashboardData {
+  funnel: FunnelData[]
+  leads: Lead[]
+  handoffs: Handoff[]
+  health: HealthStatus | null
+}
+
 export default function DashboardPage() {
   const [discoveryOpen, setDiscoveryOpen] = useState(false)
   const [campaignOpen, setCampaignOpen] = useState(false)
-
-  const { data: funnel, isLoading: funnelLoading, refetch: refetchFunnel } = useQuery({
-    queryKey: ["funnel"],
-    queryFn: api.getFunnel,
+  const [isLoading, setIsLoading] = useState(true)
+  const [data, setData] = useState<DashboardData>({
+    funnel: [],
+    leads: [],
+    handoffs: [],
+    health: null,
   })
 
-  const { data: leads, isLoading: leadsLoading } = useQuery({
-    queryKey: ["leads", { limit: 5 }],
-    queryFn: () => api.getLeads({ limit: 5 }),
-  })
+  const loadData = async () => {
+    setIsLoading(true)
+    const result: DashboardData = {
+      funnel: [],
+      leads: [],
+      handoffs: [],
+      health: null,
+    }
 
-  const { data: handoffs } = useQuery({
-    queryKey: ["handoffs"],
-    queryFn: api.getHandoffs,
-  })
+    // Load data sequentially with try/catch for each request
+    try {
+      result.health = await api.getHealth()
+    } catch (e) {
+      console.error("Failed to load health:", e)
+      result.health = null
+    }
 
-  const { data: health } = useQuery({
-    queryKey: ["health"],
-    queryFn: api.getHealth,
-    refetchInterval: 30000,
-  })
+    try {
+      result.funnel = await api.getFunnel()
+    } catch (e) {
+      console.error("Failed to load funnel:", e)
+      result.funnel = []
+    }
 
-  const totalLeads = funnel?.reduce((sum, item) => sum + item.count, 0) || 0
-  const qualifiedLeads = funnel?.find((f) => f.status === "QUALIFIED")?.count || 0
-  const warmLeads = handoffs?.length || 0
+    try {
+      const leadsResponse = await api.getLeads({ limit: 5 })
+      result.leads = leadsResponse.items || []
+    } catch (e) {
+      console.error("Failed to load leads:", e)
+      result.leads = []
+    }
+
+    try {
+      result.handoffs = await api.getHandoffs()
+    } catch (e) {
+      console.error("Failed to load handoffs:", e)
+      result.handoffs = []
+    }
+
+    setData(result)
+    setIsLoading(false)
+  }
+
+  useEffect(() => {
+    loadData()
+  }, [])
+
+  const totalLeads = data.funnel?.reduce((sum, item) => sum + item.count, 0) || 0
+  const qualifiedLeads = data.funnel?.find((f) => f.status === "QUALIFIED")?.count || 0
+  const warmLeads = data.handoffs?.length || 0
 
   return (
     <div className="min-h-screen bg-zinc-950">
@@ -81,7 +119,7 @@ export default function DashboardPage() {
               </p>
             </div>
             <div className="flex items-center gap-3">
-              {health?.status === "ok" ? (
+              {data.health?.status === "ok" ? (
                 <Badge variant="success" className="gap-1">
                   <Activity className="h-3 w-3" />
                   Система работает
@@ -117,7 +155,7 @@ export default function DashboardPage() {
             <Button
               size="lg"
               variant="ghost"
-              onClick={() => refetchFunnel()}
+              onClick={() => loadData()}
               className="gap-2"
             >
               <RefreshCw className="h-5 w-5" />
@@ -151,10 +189,10 @@ export default function DashboardPage() {
               </Link>
             </CardHeader>
             <CardContent>
-              {funnelLoading ? (
+              {isLoading ? (
                 <Skeleton className="h-[300px]" />
-              ) : funnel ? (
-                <FunnelChart data={funnel} />
+              ) : data.funnel.length > 0 ? (
+                <FunnelChart data={data.funnel} />
               ) : (
                 <div className="flex h-[300px] items-center justify-center text-zinc-500">
                   Нет данных
@@ -250,15 +288,15 @@ export default function DashboardPage() {
               </Link>
             </CardHeader>
             <CardContent>
-              {leadsLoading ? (
+              {isLoading ? (
                 <div className="space-y-3">
                   {[1, 2, 3, 4, 5].map((i) => (
                     <Skeleton key={i} className="h-16" />
                   ))}
                 </div>
-              ) : leads?.items.length ? (
+              ) : data.leads.length > 0 ? (
                 <div className="space-y-3">
-                  {leads.items.map((lead) => (
+                  {data.leads.map((lead) => (
                     <Link
                       key={lead.id}
                       href={`/leads/${lead.id}`}
@@ -278,7 +316,7 @@ export default function DashboardPage() {
                       <div className="flex items-center gap-3">
                         <div className="flex items-center gap-1 text-amber-400">
                           <Star className="h-4 w-4 fill-current" />
-                          <span className="text-sm font-medium">{lead.score}</span>
+                          <span className="text-sm font-medium">{lead.score || 0}</span>
                         </div>
                         <StatusBadge status={lead.status} />
                       </div>
@@ -320,9 +358,9 @@ export default function DashboardPage() {
               </Link>
             </CardHeader>
             <CardContent>
-              {handoffs?.length ? (
+              {data.handoffs.length > 0 ? (
                 <div className="space-y-3">
-                  {handoffs.slice(0, 5).map((handoff) => (
+                  {data.handoffs.slice(0, 5).map((handoff) => (
                     <Link
                       key={handoff.id}
                       href={`/leads/${handoff.lead_id}`}
