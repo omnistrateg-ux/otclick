@@ -23,8 +23,12 @@ class EmailResponse(BaseModel):
 
     id: str
     lead_id: str
+    company_name: str | None = None
+    contact_name: str | None = None
+    contact_email: str | None = None
     to_email: str
     subject: str
+    body: str | None = None
     email_type: str
     status: str
     sent_at: datetime | None = None
@@ -120,10 +124,12 @@ async def list_emails(
     """
     from app.storage.repositories.contact_repo import ContactRepository
     from app.storage.repositories.email_repo import EmailRepository
+    from app.storage.repositories.lead_repo import LeadRepository
 
     async with async_session_factory() as db:
         email_repo = EmailRepository(db)
         contact_repo = ContactRepository(db)
+        lead_repo = LeadRepository(db)
 
         filters = {}
         if lead_id:
@@ -139,19 +145,28 @@ async def list_emails(
             page_size=page_size,
         )
 
-        # Build response with contact emails
+        # Build response with contact and lead info
         items = []
         for email in emails:
-            # Get contact email
+            # Get contact info
             contact = await contact_repo.get_by_id(email.contact_id) if email.contact_id else None
-            to_email = contact.email if contact else "unknown@example.com"
+            to_email = contact.email if contact and contact.email else "unknown@example.com"
+            contact_name = contact.full_name if contact else None
+
+            # Get lead/company info
+            lead = await lead_repo.get(str(email.lead_id)) if email.lead_id else None
+            company_name = lead.company_name if lead else None
 
             items.append(
                 EmailResponse(
                     id=str(email.id),
                     lead_id=str(email.lead_id),
+                    company_name=company_name,
+                    contact_name=contact_name,
+                    contact_email=to_email,
                     to_email=to_email,
                     subject=email.subject,
+                    body=email.body,
                     email_type=email.email_type.value if hasattr(email.email_type, 'value') else email.email_type,
                     status=_get_email_status(email),
                     sent_at=email.sent_at,
@@ -219,24 +234,35 @@ async def get_email(email_id: str) -> EmailResponse:
     """
     from app.storage.repositories.contact_repo import ContactRepository
     from app.storage.repositories.email_repo import EmailRepository
+    from app.storage.repositories.lead_repo import LeadRepository
 
     async with async_session_factory() as db:
         email_repo = EmailRepository(db)
         contact_repo = ContactRepository(db)
+        lead_repo = LeadRepository(db)
         email = await email_repo.get(email_id)
 
         if not email:
             raise HTTPException(404, f"Email {email_id} not found")
 
-        # Get contact email
+        # Get contact info
         contact = await contact_repo.get_by_id(email.contact_id) if email.contact_id else None
-        to_email = contact.email if contact else "unknown@example.com"
+        to_email = contact.email if contact and contact.email else "unknown@example.com"
+        contact_name = contact.full_name if contact else None
+
+        # Get lead/company info
+        lead = await lead_repo.get(str(email.lead_id)) if email.lead_id else None
+        company_name = lead.company_name if lead else None
 
         return EmailResponse(
             id=str(email.id),
             lead_id=str(email.lead_id),
+            company_name=company_name,
+            contact_name=contact_name,
+            contact_email=to_email,
             to_email=to_email,
             subject=email.subject,
+            body=email.body,
             email_type=email.email_type.value if hasattr(email.email_type, 'value') else email.email_type,
             status=_get_email_status(email),
             sent_at=email.sent_at,

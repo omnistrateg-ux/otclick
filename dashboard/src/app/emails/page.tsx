@@ -255,7 +255,7 @@ export default function EmailsPage() {
                           >
                             <Building2 className="h-4 w-4 text-zinc-500" />
                             <span className="font-medium truncate max-w-[150px]">
-                              {email.company_name}
+                              {email.company_name || email.contact_email || "—"}
                             </span>
                           </Link>
                         </TableCell>
@@ -263,10 +263,12 @@ export default function EmailsPage() {
                           <div className="flex items-center gap-2 text-zinc-300">
                             <User className="h-4 w-4 text-zinc-500" />
                             <div className="truncate max-w-[120px]">
-                              <p className="truncate">{email.contact_name}</p>
-                              <p className="text-xs text-zinc-500 truncate">
-                                {email.contact_email}
-                              </p>
+                              <p className="truncate">{email.contact_name || email.contact_email || "—"}</p>
+                              {email.contact_name && email.contact_email && (
+                                <p className="text-xs text-zinc-500 truncate">
+                                  {email.contact_email}
+                                </p>
+                              )}
                             </div>
                           </div>
                         </TableCell>
@@ -357,7 +359,7 @@ export default function EmailsPage() {
                       {selectedEmail.subject}
                     </p>
                     <p className="text-sm text-zinc-500">
-                      {selectedEmail.company_name}
+                      {selectedEmail.company_name || selectedEmail.contact_email || "—"}
                     </p>
                   </div>
                   {getStatusBadge(selectedEmail.status)}
@@ -375,7 +377,7 @@ export default function EmailsPage() {
                         href={`/leads/${selectedEmail.lead_id}`}
                         className="text-sm text-indigo-400 hover:text-indigo-300"
                       >
-                        {selectedEmail.company_name}
+                        {selectedEmail.company_name || selectedEmail.contact_email || "—"}
                       </Link>
                     </div>
                   </div>
@@ -383,8 +385,10 @@ export default function EmailsPage() {
                     <User className="h-5 w-5 text-zinc-500" />
                     <div>
                       <p className="text-xs text-zinc-500">Контакт</p>
-                      <p className="text-sm text-zinc-200">{selectedEmail.contact_name}</p>
-                      <p className="text-xs text-zinc-400">{selectedEmail.contact_email}</p>
+                      <p className="text-sm text-zinc-200">{selectedEmail.contact_name || selectedEmail.contact_email || "—"}</p>
+                      {selectedEmail.contact_name && selectedEmail.contact_email && (
+                        <p className="text-xs text-zinc-400">{selectedEmail.contact_email}</p>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
