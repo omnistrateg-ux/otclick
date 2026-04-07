@@ -43,7 +43,8 @@ class EmailListResponse(BaseModel):
     items: list[EmailResponse]
     total: int
     page: int
-    page_size: int
+    limit: int
+    pages: int
 
 
 class EmailStatsResponse(BaseModel):
@@ -107,8 +108,9 @@ async def list_emails(
     lead_id: str | None = Query(None, description="Filter by lead ID"),
     email_type: str | None = Query(None, description="Filter by email type"),
     status: str | None = Query(None, description="Filter by status"),
+    search: str | None = Query(None, description="Search by company, contact or subject"),
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    limit: int = Query(20, ge=1, le=100, description="Items per page"),
 ) -> EmailListResponse:
     """List emails with optional filters.
 
@@ -117,7 +119,7 @@ async def list_emails(
         email_type: Filter by type
         status: Filter by status
         page: Page number
-        page_size: Items per page
+        limit: Items per page
 
     Returns:
         Paginated list of emails
@@ -138,11 +140,13 @@ async def list_emails(
             filters["email_type"] = email_type
         if status:
             filters["status"] = status
+        if search:
+            filters["search"] = search
 
         emails, total = await email_repo.find_paginated(
             filters=filters,
             page=page,
-            page_size=page_size,
+            limit=limit,
         )
 
         # Build response with contact and lead info
@@ -176,11 +180,13 @@ async def list_emails(
                 )
             )
 
+        pages = (total + limit - 1) // limit if total > 0 else 1
         return EmailListResponse(
             items=items,
             total=total,
             page=page,
-            page_size=page_size,
+            limit=limit,
+            pages=pages,
         )
 
 

@@ -418,19 +418,21 @@ class EmailRepository:
         self,
         filters: dict | None = None,
         page: int = 1,
-        page_size: int = 20,
+        limit: int = 20,
     ) -> tuple[list[EmailMessageDB], int]:
         """Find emails with pagination.
 
         Args:
             filters: Filter criteria
             page: Page number
-            page_size: Items per page
+            limit: Items per page
 
         Returns:
             Tuple of (emails, total_count)
         """
-        from sqlalchemy import func
+        from sqlalchemy import func, or_
+
+        from app.models.db import EmployerContactDB, EmployerLeadDB
 
         filters = filters or {}
         query = select(EmailMessageDB)
@@ -457,14 +459,31 @@ class EmailRepository:
             elif status == "bounced":
                 query = query.where(EmailMessageDB.bounced == True)  # noqa: E712
 
+        if "search" in filters and filters["search"]:
+            search_term = f"%{filters['search']}%"
+            # Search in subject and body, plus join with leads/contacts for company/name
+            query = query.outerjoin(
+                EmployerLeadDB, EmailMessageDB.lead_id == EmployerLeadDB.id
+            ).outerjoin(
+                EmployerContactDB, EmailMessageDB.contact_id == EmployerContactDB.id
+            ).where(
+                or_(
+                    EmailMessageDB.subject.ilike(search_term),
+                    EmailMessageDB.body.ilike(search_term),
+                    EmployerLeadDB.company_name.ilike(search_term),
+                    EmployerContactDB.full_name.ilike(search_term),
+                    EmployerContactDB.email.ilike(search_term),
+                )
+            )
+
         # Count total
         count_query = select(func.count()).select_from(query.subquery())
         total_result = await self.db.execute(count_query)
         total = total_result.scalar_one()
 
         # Apply pagination
-        offset = (page - 1) * page_size
-        query = query.order_by(EmailMessageDB.sent_at.desc()).offset(offset).limit(page_size)
+        offset = (page - 1) * limit
+        query = query.order_by(EmailMessageDB.sent_at.desc().nullslast()).offset(offset).limit(limit)
 
         result = await self.db.execute(query)
         emails = list(result.scalars().all())
