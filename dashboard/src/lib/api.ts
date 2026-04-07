@@ -21,6 +21,7 @@ export interface Lead {
   id: string
   company_name: string
   industry: string
+  vacancy?: string
   city: string
   status: string
   score: number

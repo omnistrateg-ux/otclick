@@ -387,7 +387,7 @@ export default function LeadsPage() {
                             <div className="flex items-center justify-center h-8 w-8 flex-shrink-0 rounded-lg bg-zinc-800/50">
                               <Briefcase className="h-4 w-4 text-zinc-400" />
                             </div>
-                            <span className="text-zinc-300 break-words">{lead.industry || "Не указано"}</span>
+                            <span className="text-zinc-300 break-words">{lead.vacancy || lead.industry || "Не указано"}</span>
                           </div>
                           <div className="flex items-center gap-3 text-sm">
                             <div className="flex items-center justify-center h-8 w-8 flex-shrink-0 rounded-lg bg-zinc-800/50">

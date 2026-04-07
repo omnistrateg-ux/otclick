@@ -57,6 +57,9 @@ class EmployerLead(BaseModel):
     city: str | None = None
     region: str | None = None
 
+    # Vacancy info (from discovery)
+    vacancy: str | None = None
+
     # Связи (FK)
     company_profile_id: UUID | None = None
     campaign_id: UUID | None = None

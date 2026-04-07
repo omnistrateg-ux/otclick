@@ -29,6 +29,7 @@ class LeadResponse(BaseModel):
     score: float | None = None
     segment: str | None = None
     industry: str | None = None
+    vacancy: str | None = None
     city: str | None = None
     created_at: datetime
     updated_at: datetime
@@ -127,6 +128,7 @@ async def list_leads(
                     score=None,
                     segment=None,
                     industry=None,
+                    vacancy=lead.vacancy,
                     city=lead.city,
                     created_at=lead.created_at,
                     updated_at=lead.updated_at,
@@ -189,6 +191,7 @@ async def get_lead(lead_id: str) -> LeadResponse:
             score=None,
             segment=None,
             industry=None,
+            vacancy=lead.vacancy,
             city=lead.city,
             created_at=lead.created_at,
             updated_at=lead.updated_at,
@@ -236,6 +239,7 @@ async def create_lead(request: LeadCreateRequest) -> LeadResponse:
             score=None,
             segment=None,
             industry=None,
+            vacancy=lead.vacancy,
             city=lead.city,
             created_at=lead.created_at,
             updated_at=lead.updated_at,
@@ -284,6 +288,7 @@ async def update_lead(
             score=None,
             segment=None,
             industry=None,
+            vacancy=lead.vacancy,
             city=lead.city,
             created_at=lead.created_at,
             updated_at=lead.updated_at,
@@ -343,6 +348,7 @@ async def transition_lead(
             score=None,
             segment=None,
             industry=None,
+            vacancy=lead.vacancy,
             city=lead.city,
             created_at=lead.created_at,
             updated_at=lead.updated_at,

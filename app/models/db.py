@@ -43,6 +43,9 @@ class EmployerLeadDB(Base):
     city: Mapped[str | None] = mapped_column(String(100))
     region: Mapped[str | None] = mapped_column(String(100))
 
+    # Vacancy info (from discovery)
+    vacancy: Mapped[str | None] = mapped_column(String(500))
+
     # Foreign Keys
     company_profile_id: Mapped[UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("company_profiles.id")

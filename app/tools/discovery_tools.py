@@ -214,6 +214,7 @@ def create_lead_from_hh(employer_data: dict[str, Any]) -> EmployerLead:
         source="hh.ru",
         source_url=employer_data.get("alternate_url"),
         city=city,
+        vacancy=employer_data.get("sample_vacancy"),
         status=LeadStatus.LEAD_FOUND,
         status_changed_at=datetime.utcnow(),
         created_at=datetime.utcnow(),
