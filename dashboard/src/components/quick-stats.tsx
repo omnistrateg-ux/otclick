@@ -7,43 +7,57 @@ import { api } from "@/lib/api"
 import {
   Users,
   Mail,
-  Eye,
   MessageSquare,
   Target,
   Building2,
+  Zap,
 } from "lucide-react"
 
+interface LeadStats {
+  total: number
+  by_status: Record<string, number>
+}
+
 export function QuickStats() {
-  const { data: leads, isLoading: leadsLoading } = useQuery({
-    queryKey: ["leads", { limit: 1 }],
-    queryFn: () => api.getLeads({ limit: 1 }),
+  const { data: stats, isLoading, isError } = useQuery({
+    queryKey: ["lead-stats"],
+    queryFn: async (): Promise<LeadStats> => {
+      try {
+        const response = await fetch(
+          `${process.env.NEXT_PUBLIC_API_URL || "http://176.126.166.94:8001/api/v1"}/leads/stats`,
+          { signal: AbortSignal.timeout(10000) }
+        )
+        if (!response.ok) throw new Error("API error")
+        return response.json()
+      } catch {
+        return { total: 0, by_status: {} }
+      }
+    },
+    retry: false,
+    staleTime: 30000,
   })
 
-  const { data: emails, isLoading: emailsLoading } = useQuery({
-    queryKey: ["emails", { limit: 1 }],
-    queryFn: () => api.getEmails({ limit: 1 }),
-  })
-
-  const { data: funnel, isLoading: funnelLoading } = useQuery({
-    queryKey: ["funnel"],
-    queryFn: api.getFunnel,
-  })
-
-  const { data: handoffs, isLoading: handoffsLoading } = useQuery({
+  const { data: handoffs } = useQuery({
     queryKey: ["handoffs"],
-    queryFn: api.getHandoffs,
+    queryFn: async () => {
+      try {
+        return await api.getHandoffs()
+      } catch {
+        return []
+      }
+    },
+    retry: false,
   })
 
-  const isLoading = leadsLoading || emailsLoading || funnelLoading || handoffsLoading
-
-  const totalLeads = leads?.total || 0
-  const totalEmails = emails?.total || 0
-  const qualifiedLeads = funnel?.find((f) => f.status === "QUALIFIED")?.count || 0
-  const sentLeads = funnel?.find((f) => f.status === "OUTREACH_SENT")?.count || 0
-  const repliedLeads = funnel?.find((f) => f.status === "REPLY_RECEIVED")?.count || 0
+  const totalLeads = stats?.total || 0
+  const byStatus = stats?.by_status || {}
+  const enrichedLeads = byStatus["enriched"] || byStatus["enrichment_done"] || 0
+  const scoredLeads = byStatus["scored"] || 0
+  const qualifiedLeads = byStatus["qualified"] || 0
+  const outreachSent = byStatus["outreach_sent"] || 0
   const warmLeads = handoffs?.length || 0
 
-  const stats = [
+  const statItems = [
     {
       label: "Всего лидов",
       value: totalLeads,
@@ -51,33 +65,33 @@ export function QuickStats() {
       color: "text-indigo-400",
     },
     {
-      label: "Писем отправлено",
-      value: totalEmails,
-      icon: Mail,
+      label: "Обогащено",
+      value: enrichedLeads,
+      icon: Target,
       color: "text-emerald-400",
     },
     {
-      label: "Квалифицированных",
-      value: qualifiedLeads,
-      icon: Target,
+      label: "Оценено",
+      value: scoredLeads,
+      icon: Building2,
       color: "text-amber-400",
     },
     {
-      label: "Отправлено outreach",
-      value: sentLeads,
-      icon: Building2,
+      label: "Квалифицировано",
+      value: qualifiedLeads,
+      icon: MessageSquare,
       color: "text-orange-400",
     },
     {
-      label: "Получено ответов",
-      value: repliedLeads,
-      icon: MessageSquare,
+      label: "Outreach отправлен",
+      value: outreachSent,
+      icon: Mail,
       color: "text-rose-400",
     },
     {
       label: "Тёплых лидов",
       value: warmLeads,
-      icon: Eye,
+      icon: Zap,
       color: "text-violet-400",
     },
   ]
@@ -94,7 +108,7 @@ export function QuickStats() {
 
   return (
     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-      {stats.map((stat, index) => {
+      {statItems.map((stat, index) => {
         const Icon = stat.icon
 
         return (

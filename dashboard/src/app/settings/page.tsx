@@ -176,7 +176,7 @@ export default function SettingsPage() {
               <div>
                 <p className="font-medium text-zinc-200">API Backend</p>
                 <p className="text-sm text-zinc-500">
-                  http://176.126.166.94:8000
+                  http://176.126.166.94:8001
                 </p>
               </div>
               <Badge variant="success">Online</Badge>

@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { CampaignModal } from "@/components/campaign-modal"
-import { api } from "@/lib/api"
+import { api, Campaign } from "@/lib/api"
 import { formatDate } from "@/lib/utils"
 import {
   Plus,
@@ -23,32 +23,13 @@ import {
   FileText,
 } from "lucide-react"
 
-// API campaign type (matches backend response)
-interface APICampaign {
-  id: string
-  name: string
-  status: string
-  industries: string[]
-  regions: string[]
-  leads_discovered: number
-  leads_qualified: number
-  leads_converted: number
-  created_at: string
-  updated_at: string
-}
-
 export default function CampaignsPage() {
   const [campaignOpen, setCampaignOpen] = useState(false)
   const queryClient = useQueryClient()
 
   const { data: campaigns, isLoading } = useQuery({
     queryKey: ["campaigns"],
-    queryFn: async () => {
-      const response = await fetch("http://176.126.166.94:8000/api/v1/campaigns")
-      if (!response.ok) throw new Error("Failed to fetch campaigns")
-      const data = await response.json()
-      return (data.items || []) as APICampaign[]
-    },
+    queryFn: api.getCampaigns,
   })
 
   const activeCampaigns = campaigns?.filter((c) => c.status === "active") || []

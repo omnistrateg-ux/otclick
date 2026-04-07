@@ -10,17 +10,18 @@ import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Skeleton } from "@/components/ui/skeleton"
 import { api } from "@/lib/api"
-import { formatDate, formatNumber, formatPercent } from "@/lib/utils"
+import { formatDate, formatNumber } from "@/lib/utils"
 import {
   ArrowLeft,
   Mail,
   Users,
-  Eye,
-  MessageSquare,
+  CheckCircle,
+  TrendingUp,
   Play,
   Pause,
   Settings,
   BarChart3,
+  FileText,
 } from "lucide-react"
 
 export default function CampaignDetailPage({
@@ -68,6 +69,10 @@ export default function CampaignDetailPage({
     )
   }
 
+  const conversionRate = campaign.leads_discovered > 0
+    ? (campaign.leads_converted / campaign.leads_discovered) * 100
+    : 0
+
   return (
     <div className="min-h-screen">
       <Header
@@ -94,6 +99,11 @@ export default function CampaignDetailPage({
               <Button variant="outline">
                 <Play className="mr-2 h-4 w-4" />
                 Возобновить
+              </Button>
+            ) : campaign.status === "draft" ? (
+              <Button variant="outline">
+                <Play className="mr-2 h-4 w-4" />
+                Запустить
               </Button>
             ) : null}
             <Button variant="outline">
@@ -122,19 +132,40 @@ export default function CampaignDetailPage({
                           ? "success"
                           : campaign.status === "paused"
                           ? "warning"
+                          : campaign.status === "draft"
+                          ? "secondary"
                           : "secondary"
                       }
                     >
+                      {campaign.status === "active" && <Play className="h-3 w-3 mr-1" />}
+                      {campaign.status === "paused" && <Pause className="h-3 w-3 mr-1" />}
+                      {campaign.status === "draft" && <FileText className="h-3 w-3 mr-1" />}
                       {campaign.status === "active"
                         ? "Активна"
                         : campaign.status === "paused"
                         ? "Пауза"
+                        : campaign.status === "draft"
+                        ? "Черновик"
                         : "Завершена"}
                     </Badge>
                     <span className="text-sm text-zinc-500">
                       Создана {formatDate(campaign.created_at)}
                     </span>
                   </div>
+                  {(campaign.industries?.length > 0 || campaign.regions?.length > 0) && (
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {campaign.industries?.map((ind) => (
+                        <Badge key={ind} variant="outline" className="text-xs">
+                          {ind}
+                        </Badge>
+                      ))}
+                      {campaign.regions?.map((reg) => (
+                        <Badge key={reg} variant="outline" className="text-xs">
+                          {reg}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -147,9 +178,9 @@ export default function CampaignDetailPage({
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-zinc-400">Всего лидов</p>
+                  <p className="text-sm text-zinc-400">Найдено</p>
                   <p className="mt-1 text-3xl font-bold text-zinc-100">
-                    {formatNumber(campaign.leads_count)}
+                    {formatNumber(campaign.leads_discovered)}
                   </p>
                 </div>
                 <Users className="h-8 w-8 text-indigo-400" />
@@ -161,12 +192,12 @@ export default function CampaignDetailPage({
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-zinc-400">Отправлено</p>
+                  <p className="text-sm text-zinc-400">Квалифицировано</p>
                   <p className="mt-1 text-3xl font-bold text-zinc-100">
-                    {formatNumber(campaign.emails_sent)}
+                    {formatNumber(campaign.leads_qualified)}
                   </p>
                 </div>
-                <Mail className="h-8 w-8 text-emerald-400" />
+                <CheckCircle className="h-8 w-8 text-emerald-400" />
               </div>
             </CardContent>
           </Card>
@@ -175,12 +206,12 @@ export default function CampaignDetailPage({
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-zinc-400">Open Rate</p>
+                  <p className="text-sm text-zinc-400">Конвертировано</p>
                   <p className="mt-1 text-3xl font-bold text-zinc-100">
-                    {formatPercent(campaign.open_rate)}
+                    {formatNumber(campaign.leads_converted)}
                   </p>
                 </div>
-                <Eye className="h-8 w-8 text-orange-400" />
+                <TrendingUp className="h-8 w-8 text-orange-400" />
               </div>
             </CardContent>
           </Card>
@@ -189,12 +220,12 @@ export default function CampaignDetailPage({
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-zinc-400">Reply Rate</p>
+                  <p className="text-sm text-zinc-400">Конверсия</p>
                   <p className="mt-1 text-3xl font-bold text-zinc-100">
-                    {formatPercent(campaign.reply_rate)}
+                    {conversionRate.toFixed(1)}%
                   </p>
                 </div>
-                <MessageSquare className="h-8 w-8 text-amber-400" />
+                <BarChart3 className="h-8 w-8 text-amber-400" />
               </div>
             </CardContent>
           </Card>
@@ -205,34 +236,56 @@ export default function CampaignDetailPage({
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <BarChart3 className="h-5 w-5 text-indigo-400" />
-              Показатели эффективности
+              Воронка кампании
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
             <div>
               <div className="flex justify-between text-sm mb-2">
-                <span className="text-zinc-400">Прогресс отправки</span>
+                <span className="text-zinc-400">Найдено → Квалифицировано</span>
                 <span className="text-zinc-200">
-                  {campaign.emails_sent} / {campaign.leads_count} ({Math.round((campaign.emails_sent / campaign.leads_count) * 100)}%)
+                  {campaign.leads_qualified} / {campaign.leads_discovered} (
+                  {campaign.leads_discovered > 0
+                    ? Math.round((campaign.leads_qualified / campaign.leads_discovered) * 100)
+                    : 0}
+                  %)
                 </span>
               </div>
-              <Progress value={(campaign.emails_sent / campaign.leads_count) * 100} />
+              <Progress
+                value={
+                  campaign.leads_discovered > 0
+                    ? (campaign.leads_qualified / campaign.leads_discovered) * 100
+                    : 0
+                }
+              />
             </div>
 
             <div>
               <div className="flex justify-between text-sm mb-2">
-                <span className="text-zinc-400">Open Rate</span>
-                <span className="text-zinc-200">{formatPercent(campaign.open_rate)}</span>
+                <span className="text-zinc-400">Квалифицировано → Конвертировано</span>
+                <span className="text-zinc-200">
+                  {campaign.leads_converted} / {campaign.leads_qualified} (
+                  {campaign.leads_qualified > 0
+                    ? Math.round((campaign.leads_converted / campaign.leads_qualified) * 100)
+                    : 0}
+                  %)
+                </span>
               </div>
-              <Progress value={campaign.open_rate} />
+              <Progress
+                value={
+                  campaign.leads_qualified > 0
+                    ? (campaign.leads_converted / campaign.leads_qualified) * 100
+                    : 0
+                }
+              />
             </div>
 
             <div>
               <div className="flex justify-between text-sm mb-2">
-                <span className="text-zinc-400">Reply Rate</span>
-                <span className="text-zinc-200">{formatPercent(campaign.reply_rate)}</span>
+                <span className="text-zinc-400">Общая конверсия</span>
+                <span className="text-zinc-200">{conversionRate.toFixed(1)}%</span>
               </div>
-              <Progress value={campaign.reply_rate} />
+              <Progress value={conversionRate} />
             </div>
           </CardContent>
         </Card>
@@ -241,20 +294,20 @@ export default function CampaignDetailPage({
         <Card className="border-indigo-600/20 bg-indigo-600/5">
           <CardContent className="pt-6">
             <h3 className="font-medium text-indigo-400 mb-2">
-              Рекомендации по улучшению
+              Статус кампании
             </h3>
             <ul className="space-y-2 text-sm text-zinc-400">
-              {campaign.open_rate < 20 && (
-                <li>• Open Rate ниже 20% — попробуйте улучшить тему письма</li>
+              {campaign.leads_discovered === 0 && (
+                <li>• Лиды ещё не найдены — запустите Discovery</li>
               )}
-              {campaign.reply_rate < 5 && (
-                <li>• Reply Rate ниже 5% — персонализируйте содержание</li>
+              {campaign.leads_discovered > 0 && campaign.leads_qualified === 0 && (
+                <li>• Лиды найдены, но не квалифицированы — запустите обогащение и скоринг</li>
               )}
-              {campaign.emails_sent < campaign.leads_count * 0.5 && (
-                <li>• Отправлено меньше половины — увеличьте скорость отправки</li>
+              {campaign.leads_qualified > 0 && campaign.leads_converted === 0 && (
+                <li>• Есть квалифицированные лиды — запустите outreach</li>
               )}
-              {campaign.open_rate >= 20 && campaign.reply_rate >= 5 && (
-                <li>• Отличные показатели! Продолжайте в том же духе</li>
+              {campaign.leads_converted > 0 && (
+                <li>• Отличные результаты! Есть конвертированные лиды</li>
               )}
             </ul>
           </CardContent>
