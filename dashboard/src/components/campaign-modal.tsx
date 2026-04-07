@@ -47,6 +47,13 @@ const INDUSTRIES = [
   { id: "agriculture", label: "Агропром", icon: "🌾" },
 ]
 
+const VACANCY_MAPPING: Record<string, string[]> = {
+  retail: ["кассир", "продавец-кассир", "мерчандайзер"],
+  horeca: ["повар", "официант", "бармен"],
+  warehouse: ["грузчик", "комплектовщик", "сборщик заказов"],
+  agriculture: ["овощевод", "тепличный рабочий", "сборщик урожая"],
+}
+
 interface CampaignModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -65,6 +72,7 @@ export function CampaignModal({ open, onOpenChange }: CampaignModalProps) {
   const [step, setStep] = useState(1)
   const [name, setName] = useState("")
   const [industry, setIndustry] = useState("")
+  const [selectedVacancies, setSelectedVacancies] = useState<string[]>([])
   const [template, setTemplate] = useState("")
   const [dailyLimit, setDailyLimit] = useState(50)
   const [delayHours, setDelayHours] = useState(24)
@@ -82,6 +90,7 @@ export function CampaignModal({ open, onOpenChange }: CampaignModalProps) {
       await api.createCampaign({
         name,
         industries: [industry],
+        vacancies: selectedVacancies,
         daily_discovery_limit: dailyLimit,
         auto_start: true,
       })
@@ -95,12 +104,28 @@ export function CampaignModal({ open, onOpenChange }: CampaignModalProps) {
     }
   }
 
+  const handleIndustryChange = (value: string) => {
+    setIndustry(value)
+    // Reset vacancies and select all by default for the new industry
+    const vacancies = VACANCY_MAPPING[value] || []
+    setSelectedVacancies(vacancies)
+  }
+
+  const handleVacancyToggle = (vacancy: string) => {
+    setSelectedVacancies((prev) =>
+      prev.includes(vacancy)
+        ? prev.filter((v) => v !== vacancy)
+        : [...prev, vacancy]
+    )
+  }
+
   const handleClose = () => {
     onOpenChange(false)
     setTimeout(() => {
       setStep(1)
       setName("")
       setIndustry("")
+      setSelectedVacancies([])
       setTemplate("")
       setError(null)
     }, 300)
@@ -145,7 +170,7 @@ export function CampaignModal({ open, onOpenChange }: CampaignModalProps) {
                   <Building2 className="h-4 w-4 text-indigo-400" />
                   Отрасль
                 </label>
-                <Select value={industry} onValueChange={setIndustry}>
+                <Select value={industry} onValueChange={handleIndustryChange}>
                   <SelectTrigger>
                     <SelectValue placeholder="Выберите отрасль" />
                   </SelectTrigger>
@@ -161,6 +186,35 @@ export function CampaignModal({ open, onOpenChange }: CampaignModalProps) {
                   </SelectContent>
                 </Select>
               </div>
+
+              {/* Vacancy Selection - shown when industry has vacancies */}
+              {industry && VACANCY_MAPPING[industry] && (
+                <div>
+                  <label className="text-sm font-medium text-zinc-300 mb-2 block">
+                    Вакансии для поиска
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {VACANCY_MAPPING[industry].map((vacancy) => (
+                      <label
+                        key={vacancy}
+                        className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-all ${
+                          selectedVacancies.includes(vacancy)
+                            ? "border-indigo-500 bg-indigo-500/20"
+                            : "border-zinc-700 bg-zinc-800/50 hover:border-zinc-600"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedVacancies.includes(vacancy)}
+                          onChange={() => handleVacancyToggle(vacancy)}
+                          className="h-4 w-4 rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500 focus:ring-offset-0"
+                        />
+                        <span className="text-sm text-zinc-300">{vacancy}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Template Selection */}
               <div>

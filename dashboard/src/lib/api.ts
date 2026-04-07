@@ -57,6 +57,7 @@ export interface Campaign {
 export interface CampaignCreateRequest {
   name: string
   industries?: string[]
+  vacancies?: string[]
   regions?: string[]
   daily_discovery_limit?: number
   auto_start?: boolean
