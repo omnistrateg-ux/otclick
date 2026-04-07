@@ -609,3 +609,265 @@ async def discover_leads(request: DiscoverRequest) -> DiscoverResponse:
         leads_created=leads_created,
         companies=companies,
     )
+
+
+# Enrichment models
+class EnrichResult(BaseModel):
+    """Single enrichment result."""
+
+    lead_id: str
+    company_name: str
+    domain: str | None = None
+    email: str | None = None
+    status: str  # "enriched", "no_domain", "error"
+    error: str | None = None
+
+
+class EnrichAllResponse(BaseModel):
+    """Enrich-all response."""
+
+    total: int
+    enriched: int
+    results: list[EnrichResult]
+
+
+@router.post("/enrich-all", response_model=EnrichAllResponse)
+async def enrich_all_leads() -> EnrichAllResponse:
+    """Enrich all leads - find domains via HH.ru and generate hr@domain emails.
+
+    Returns:
+        Enrichment results for all leads
+    """
+    from urllib.parse import urlparse
+
+    import httpx
+
+    from app.models.domain import EmployerContact
+    from app.models.enums import ContactRole
+    from app.storage.repositories.lead_repo import LeadRepository
+
+    results: list[EnrichResult] = []
+    enriched_count = 0
+
+    async with async_session_factory() as db:
+        lead_repo = LeadRepository(db)
+
+        # Get all leads without domain
+        leads, total = await lead_repo.find_paginated(filters={}, page=1, page_size=1000)
+
+        for lead in leads:
+            try:
+                # Skip if already has domain
+                if lead.domain:
+                    results.append(EnrichResult(
+                        lead_id=str(lead.id),
+                        company_name=lead.company_name,
+                        domain=lead.domain,
+                        email=f"hr@{lead.domain}",
+                        status="enriched",
+                    ))
+                    enriched_count += 1
+                    continue
+
+                # Try to find domain via HH.ru API using company name
+                domain = None
+                headers = {"User-Agent": "OtclickEmployerEngine/1.0"}
+
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    # Search employers by company name
+                    resp = await client.get(
+                        "https://api.hh.ru/employers",
+                        params={"text": lead.company_name, "per_page": 1},
+                        headers=headers,
+                    )
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        items = data.get("items", [])
+                        if items:
+                            employer_id = items[0].get("id")
+                            # Get detailed employer info
+                            detail_resp = await client.get(
+                                f"https://api.hh.ru/employers/{employer_id}",
+                                headers=headers,
+                            )
+                            if detail_resp.status_code == 200:
+                                detail = detail_resp.json()
+                                site_url = detail.get("site_url")
+                                if site_url:
+                                    parsed = urlparse(site_url)
+                                    domain = parsed.netloc.replace("www.", "")
+
+                if domain:
+                    # Update lead with domain
+                    lead.domain = domain
+                    lead.updated_at = datetime.now(UTC)
+                    await lead_repo.update(lead)
+
+                    # Create HR contact
+                    hr_email = f"hr@{domain}"
+
+                    results.append(EnrichResult(
+                        lead_id=str(lead.id),
+                        company_name=lead.company_name,
+                        domain=domain,
+                        email=hr_email,
+                        status="enriched",
+                    ))
+                    enriched_count += 1
+                else:
+                    results.append(EnrichResult(
+                        lead_id=str(lead.id),
+                        company_name=lead.company_name,
+                        status="no_domain",
+                    ))
+
+            except Exception as e:
+                results.append(EnrichResult(
+                    lead_id=str(lead.id),
+                    company_name=lead.company_name,
+                    status="error",
+                    error=str(e),
+                ))
+
+        await db.commit()
+
+    return EnrichAllResponse(
+        total=len(leads),
+        enriched=enriched_count,
+        results=results,
+    )
+
+
+# Campaign send models
+class SendCampaignRequest(BaseModel):
+    """Send campaign request."""
+
+    subject: str = Field(..., min_length=1, max_length=200)
+    body: str = Field(..., min_length=1)
+    lead_ids: list[str] | None = None  # If None, send to all leads with email
+
+
+class SendResult(BaseModel):
+    """Single send result."""
+
+    lead_id: str
+    company_name: str
+    email: str
+    status: str  # "sent", "no_email", "error"
+    message_id: str | None = None
+    error: str | None = None
+
+
+class SendCampaignResponse(BaseModel):
+    """Send campaign response."""
+
+    total: int
+    sent: int
+    results: list[SendResult]
+
+
+@router.post("/send-campaign", response_model=SendCampaignResponse)
+async def send_campaign(request: SendCampaignRequest) -> SendCampaignResponse:
+    """Send campaign emails via Resend.
+
+    Args:
+        request: Campaign email details
+
+    Returns:
+        Send results for all targeted leads
+    """
+    import httpx
+
+    from app.storage.repositories.lead_repo import LeadRepository
+
+    RESEND_API_KEY = "re_ipEHgUB2_3APNXpwvAhtKAxRuYaxHTeAB"
+    FROM_EMAIL = "Владислав Наков <team@otclick-hr.ru>"
+
+    results: list[SendResult] = []
+    sent_count = 0
+
+    async with async_session_factory() as db:
+        lead_repo = LeadRepository(db)
+
+        # Get leads to send to
+        if request.lead_ids:
+            leads = []
+            for lead_id in request.lead_ids:
+                lead = await lead_repo.get(lead_id)
+                if lead:
+                    leads.append(lead)
+        else:
+            leads, _ = await lead_repo.find_paginated(filters={}, page=1, page_size=1000)
+
+        for lead in leads:
+            # Check if lead has domain for email
+            if not lead.domain:
+                results.append(SendResult(
+                    lead_id=str(lead.id),
+                    company_name=lead.company_name,
+                    email="",
+                    status="no_email",
+                    error="No domain available",
+                ))
+                continue
+
+            hr_email = f"hr@{lead.domain}"
+
+            try:
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    resp = await client.post(
+                        "https://api.resend.com/emails",
+                        headers={
+                            "Authorization": f"Bearer {RESEND_API_KEY}",
+                            "Content-Type": "application/json",
+                        },
+                        json={
+                            "from": FROM_EMAIL,
+                            "to": [hr_email],
+                            "subject": request.subject,
+                            "html": request.body,
+                        },
+                    )
+
+                    if resp.status_code in (200, 201):
+                        data = resp.json()
+                        message_id = data.get("id")
+
+                        # Update lead status
+                        lead.status = LeadStatus.OUTREACH_SENT
+                        lead.updated_at = datetime.now(UTC)
+                        await lead_repo.update(lead)
+
+                        results.append(SendResult(
+                            lead_id=str(lead.id),
+                            company_name=lead.company_name,
+                            email=hr_email,
+                            status="sent",
+                            message_id=message_id,
+                        ))
+                        sent_count += 1
+                    else:
+                        results.append(SendResult(
+                            lead_id=str(lead.id),
+                            company_name=lead.company_name,
+                            email=hr_email,
+                            status="error",
+                            error=f"Resend API error: {resp.status_code} - {resp.text}",
+                        ))
+
+            except Exception as e:
+                results.append(SendResult(
+                    lead_id=str(lead.id),
+                    company_name=lead.company_name,
+                    email=hr_email,
+                    status="error",
+                    error=str(e),
+                ))
+
+        await db.commit()
+
+    return SendCampaignResponse(
+        total=len(leads),
+        sent=sent_count,
+        results=results,
+    )
