@@ -29,16 +29,13 @@ import {
 } from "lucide-react"
 
 const INDUSTRIES = [
-  { id: "it", label: "IT и Технологии", icon: "💻" },
   { id: "retail", label: "Ритейл", icon: "🛒" },
-  { id: "horeca", label: "HoReCa", icon: "🍽️" },
+  { id: "horeca", label: "Рестораны/Кафе", icon: "🍽️" },
   { id: "logistics", label: "Логистика", icon: "🚚" },
-  { id: "manufacturing", label: "Производство", icon: "🏭" },
-  { id: "finance", label: "Финансы", icon: "💰" },
-  { id: "healthcare", label: "Здравоохранение", icon: "🏥" },
+  { id: "warehouse", label: "Склад", icon: "📦" },
   { id: "construction", label: "Строительство", icon: "🏗️" },
-  { id: "education", label: "Образование", icon: "📚" },
-  { id: "services", label: "Услуги", icon: "🛎️" },
+  { id: "manufacturing", label: "Производство", icon: "🏭" },
+  { id: "agriculture", label: "Агропром", icon: "🌾" },
 ]
 
 const CITIES = [

@@ -32,8 +32,19 @@ import {
   Calendar,
   Settings,
   AlertCircle,
+  Building2,
 } from "lucide-react"
 import { api } from "@/lib/api"
+
+const INDUSTRIES = [
+  { id: "retail", label: "Ритейл", icon: "🛒" },
+  { id: "horeca", label: "Рестораны/Кафе", icon: "🍽️" },
+  { id: "logistics", label: "Логистика", icon: "🚚" },
+  { id: "warehouse", label: "Склад", icon: "📦" },
+  { id: "construction", label: "Строительство", icon: "🏗️" },
+  { id: "manufacturing", label: "Производство", icon: "🏭" },
+  { id: "agriculture", label: "Агропром", icon: "🌾" },
+]
 
 interface CampaignModalProps {
   open: boolean
@@ -51,6 +62,7 @@ export function CampaignModal({ open, onOpenChange }: CampaignModalProps) {
   const router = useRouter()
   const [step, setStep] = useState(1)
   const [name, setName] = useState("")
+  const [industry, setIndustry] = useState("")
   const [template, setTemplate] = useState("")
   const [dailyLimit, setDailyLimit] = useState(50)
   const [delayHours, setDelayHours] = useState(24)
@@ -67,6 +79,7 @@ export function CampaignModal({ open, onOpenChange }: CampaignModalProps) {
     try {
       await api.createCampaign({
         name,
+        industries: [industry],
         daily_discovery_limit: dailyLimit,
         auto_start: true,
       })
@@ -84,6 +97,7 @@ export function CampaignModal({ open, onOpenChange }: CampaignModalProps) {
     setTimeout(() => {
       setStep(1)
       setName("")
+      setIndustry("")
       setTemplate("")
       setError(null)
     }, 300)
@@ -116,10 +130,33 @@ export function CampaignModal({ open, onOpenChange }: CampaignModalProps) {
                   Название кампании
                 </label>
                 <Input
-                  placeholder="Например: IT компании Москвы - Апрель 2024"
+                  placeholder="Например: Ритейл Москва - Апрель 2024"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                 />
+              </div>
+
+              {/* Industry Selection */}
+              <div>
+                <label className="flex items-center gap-2 text-sm font-medium text-zinc-300 mb-2">
+                  <Building2 className="h-4 w-4 text-indigo-400" />
+                  Отрасль
+                </label>
+                <Select value={industry} onValueChange={setIndustry}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Выберите отрасль" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {INDUSTRIES.map((ind) => (
+                      <SelectItem key={ind.id} value={ind.id}>
+                        <span className="flex items-center gap-2">
+                          <span>{ind.icon}</span>
+                          <span>{ind.label}</span>
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               {/* Template Selection */}
@@ -267,7 +304,7 @@ export function CampaignModal({ open, onOpenChange }: CampaignModalProps) {
               </Button>
               <Button
                 onClick={handleLaunch}
-                disabled={!name || !template || isLaunching}
+                disabled={!name || !industry || !template || isLaunching}
                 className="gap-2"
               >
                 {isLaunching ? (
