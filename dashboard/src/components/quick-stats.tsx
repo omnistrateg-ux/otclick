@@ -18,19 +18,39 @@ interface LeadStats {
   by_status: Record<string, number>
 }
 
+interface FunnelData {
+  [key: string]: number
+}
+
 export function QuickStats() {
-  const { data: stats, isLoading, isError } = useQuery({
+  const { data: stats, isLoading } = useQuery({
     queryKey: ["lead-stats"],
     queryFn: async (): Promise<LeadStats> => {
       try {
         const response = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL || "http://176.126.166.94:8001/api/v1"}/leads/stats`,
-          { signal: AbortSignal.timeout(10000) }
+          `${process.env.NEXT_PUBLIC_API_URL || "http://176.126.166.94:8001/api/v1"}/leads/stats`
         )
         if (!response.ok) throw new Error("API error")
         return response.json()
       } catch {
         return { total: 0, by_status: {} }
+      }
+    },
+    retry: false,
+    staleTime: 30000,
+  })
+
+  const { data: funnel } = useQuery({
+    queryKey: ["funnel-stats"],
+    queryFn: async (): Promise<FunnelData> => {
+      try {
+        const response = await fetch(
+          `${process.env.NEXT_PUBLIC_API_URL || "http://176.126.166.94:8001/api/v1"}/analytics/funnel`
+        )
+        if (!response.ok) throw new Error("API error")
+        return response.json()
+      } catch {
+        return {}
       }
     },
     retry: false,
@@ -51,10 +71,11 @@ export function QuickStats() {
 
   const totalLeads = stats?.total || 0
   const byStatus = stats?.by_status || {}
-  const enrichedLeads = byStatus["enriched"] || byStatus["enrichment_done"] || 0
-  const scoredLeads = byStatus["scored"] || 0
-  const qualifiedLeads = byStatus["qualified"] || 0
-  const outreachSent = byStatus["outreach_sent"] || 0
+  // Use funnel data for status counts (keys are lowercase)
+  const enrichedLeads = funnel?.enrichment_done || byStatus["enrichment_done"] || 0
+  const scoredLeads = funnel?.scored || byStatus["scored"] || 0
+  const qualifiedLeads = funnel?.qualified || byStatus["qualified"] || 0
+  const outreachSent = funnel?.outreach_sent || funnel?.outreach_started || byStatus["outreach_sent"] || 0
   const warmLeads = handoffs?.length || 0
 
   const statItems = [
