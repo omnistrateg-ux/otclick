@@ -1,7 +1,7 @@
 "use client"
 
-import { use } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { use, useState } from "react"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import Link from "next/link"
 import { Header } from "@/components/header"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Skeleton } from "@/components/ui/skeleton"
+import { DiscoveryModal } from "@/components/discovery-modal"
 import { api } from "@/lib/api"
 import { formatDate, formatNumber } from "@/lib/utils"
 import {
@@ -22,6 +23,9 @@ import {
   Settings,
   BarChart3,
   FileText,
+  Rocket,
+  Send,
+  Loader2,
 } from "lucide-react"
 
 export default function CampaignDetailPage({
@@ -30,11 +34,39 @@ export default function CampaignDetailPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = use(params)
+  const [discoveryOpen, setDiscoveryOpen] = useState(false)
+  const [isSending, setIsSending] = useState(false)
+  const queryClient = useQueryClient()
 
   const { data: campaign, isLoading } = useQuery({
     queryKey: ["campaign", id],
     queryFn: () => api.getCampaign(id),
   })
+
+  const handleSendEmails = async () => {
+    setIsSending(true)
+    try {
+      await api.sendCampaignEmails({
+        campaign_id: id,
+        subject: "Предложение по подбору линейного персонала",
+        body: `<p>Добрый день!</p>
+<p>Мы — Otclick, сервис по подбору линейного персонала (кассиры, продавцы, грузчики, курьеры).</p>
+<p>Заметили, что вы размещаете вакансии на hh.ru. Хотим предложить более эффективное решение:</p>
+<ul>
+<li>Подбор от 3 дней</li>
+<li>Оплата только за выход на работу</li>
+<li>Гарантийная замена</li>
+</ul>
+<p>Готовы обсудить?</p>
+<p>С уважением,<br/>Команда Otclick</p>`,
+      })
+      queryClient.invalidateQueries({ queryKey: ["campaign", id] })
+    } catch (err) {
+      console.error("Send error:", err)
+    } finally {
+      setIsSending(false)
+    }
+  }
 
   if (isLoading) {
     return (
@@ -90,6 +122,22 @@ export default function CampaignDetailPage({
             </Button>
           </Link>
           <div className="flex gap-2">
+            <Button onClick={() => setDiscoveryOpen(true)}>
+              <Rocket className="mr-2 h-4 w-4" />
+              Discovery
+            </Button>
+            <Button
+              variant="outline"
+              onClick={handleSendEmails}
+              disabled={isSending || campaign.leads_discovered === 0}
+            >
+              {isSending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="mr-2 h-4 w-4" />
+              )}
+              {isSending ? "Отправка..." : "Отправить письма"}
+            </Button>
             {campaign.status === "active" ? (
               <Button variant="outline">
                 <Pause className="mr-2 h-4 w-4" />
@@ -313,6 +361,12 @@ export default function CampaignDetailPage({
           </CardContent>
         </Card>
       </div>
+
+      <DiscoveryModal
+        open={discoveryOpen}
+        onOpenChange={setDiscoveryOpen}
+        campaignId={id}
+      />
     </div>
   )
 }

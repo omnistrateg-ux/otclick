@@ -501,6 +501,7 @@ class DiscoverRequest(BaseModel):
     queries: list[str] | None = None
     city: str | None = None
     max_leads: int = Field(default=10, ge=1, le=100)
+    campaign_id: str | None = None
 
 
 class DiscoverCompany(BaseModel):
@@ -599,6 +600,10 @@ async def discover_leads(request: DiscoverRequest) -> DiscoverResponse:
             # Create lead with auto-enrichment (domain + hr@domain)
             try:
                 lead, email = await create_lead_with_contact(employer_data)
+                # Set campaign_id if provided
+                if request.campaign_id:
+                    from uuid import UUID as UUIDType
+                    lead.campaign_id = UUIDType(request.campaign_id)
                 created_lead = await lead_repo.create(lead)
 
                 companies.append(DiscoverCompany(
@@ -761,6 +766,7 @@ class SendCampaignRequest(BaseModel):
     subject: str = Field(..., min_length=1, max_length=200)
     body: str = Field(..., min_length=1)
     lead_ids: list[str] | None = None  # If None, send to all leads with email
+    campaign_id: str | None = None  # Filter by campaign
 
 
 class SendResult(BaseModel):
@@ -812,6 +818,11 @@ async def send_campaign(request: SendCampaignRequest) -> SendCampaignResponse:
                 lead = await lead_repo.get(lead_id)
                 if lead:
                     leads.append(lead)
+        elif request.campaign_id:
+            # Filter by campaign_id
+            from uuid import UUID as UUIDType
+            all_leads, _ = await lead_repo.find_paginated(filters={}, page=1, page_size=1000)
+            leads = [l for l in all_leads if l.campaign_id and str(l.campaign_id) == request.campaign_id]
         else:
             leads, _ = await lead_repo.find_paginated(filters={}, page=1, page_size=1000)
 

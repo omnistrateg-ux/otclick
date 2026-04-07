@@ -257,8 +257,14 @@ export const api = {
 
   getLead: (id: string) => fetcher<LeadDetail>(`/leads/${id}`),
 
-  discoverLeads: (params: { industry?: string; city?: string; max_leads?: number }) =>
+  discoverLeads: (params: { industry?: string; queries?: string[]; city?: string; max_leads?: number; campaign_id?: string }) =>
     fetcher<DiscoverResponse>("/leads/discover", {
+      method: "POST",
+      body: JSON.stringify(params),
+    }),
+
+  sendCampaignEmails: (params: { campaign_id: string; subject: string; body: string }) =>
+    fetcher<{ total: number; sent: number }>("/leads/send-campaign", {
       method: "POST",
       body: JSON.stringify(params),
     }),

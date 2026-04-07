@@ -66,9 +66,10 @@ const CITIES = [
 interface DiscoveryModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  campaignId?: string
 }
 
-export function DiscoveryModal({ open, onOpenChange }: DiscoveryModalProps) {
+export function DiscoveryModal({ open, onOpenChange, campaignId }: DiscoveryModalProps) {
   const [selectedIndustries, setSelectedIndustries] = useState<string[]>([])
   const [selectedVacancies, setSelectedVacancies] = useState<string[]>([])
   const [selectedCities, setSelectedCities] = useState<string[]>([])
@@ -89,6 +90,7 @@ export function DiscoveryModal({ open, onOpenChange }: DiscoveryModalProps) {
         queries: selectedVacancies.length > 0 ? selectedVacancies : undefined,
         city: selectedCities.join(",") || undefined,
         max_leads: leadsCount,
+        campaign_id: campaignId,
       }),
     onSuccess: (data) => {
       setResult(data)
