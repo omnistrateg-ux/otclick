@@ -1,33 +1,19 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://176.126.166.94:8001/api/v1"
 
-interface FetcherOptions extends RequestInit {
-  timeout?: number
-}
+async function fetcher<T>(endpoint: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(`${API_BASE}${endpoint}`, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+  })
 
-async function fetcher<T>(endpoint: string, options?: FetcherOptions): Promise<T> {
-  const { timeout = 15000, ...fetchOptions } = options || {}
-
-  const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), timeout)
-
-  try {
-    const res = await fetch(`${API_BASE}${endpoint}`, {
-      ...fetchOptions,
-      signal: controller.signal,
-      headers: {
-        "Content-Type": "application/json",
-        ...fetchOptions?.headers,
-      },
-    })
-
-    if (!res.ok) {
-      throw new Error(`API error: ${res.status} ${res.statusText}`)
-    }
-
-    return res.json()
-  } finally {
-    clearTimeout(timeoutId)
+  if (!res.ok) {
+    throw new Error(`API error: ${res.status} ${res.statusText}`)
   }
+
+  return res.json()
 }
 
 // Types
@@ -273,7 +259,6 @@ export const api = {
     fetcher<DiscoverResponse>("/leads/discover", {
       method: "POST",
       body: JSON.stringify(params),
-      timeout: 30000, // 30 seconds for discovery
     }),
 
   // Campaigns - extract items from paginated response
