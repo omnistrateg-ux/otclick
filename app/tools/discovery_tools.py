@@ -61,6 +61,7 @@ async def find_employers_hh(
 
     if search_text:
         params["text"] = search_text
+        params["search_field"] = "name"  # Search only in vacancy name, not description
     if area:
         params["area"] = area
 
