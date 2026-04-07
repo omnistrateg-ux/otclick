@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
+import { useQueryClient } from "@tanstack/react-query"
 import {
   Dialog,
   DialogContent,
@@ -60,6 +61,7 @@ const EMAIL_TEMPLATES = [
 
 export function CampaignModal({ open, onOpenChange }: CampaignModalProps) {
   const router = useRouter()
+  const queryClient = useQueryClient()
   const [step, setStep] = useState(1)
   const [name, setName] = useState("")
   const [industry, setIndustry] = useState("")
@@ -83,6 +85,7 @@ export function CampaignModal({ open, onOpenChange }: CampaignModalProps) {
         daily_discovery_limit: dailyLimit,
         auto_start: true,
       })
+      queryClient.invalidateQueries({ queryKey: ["campaigns"] })
       setStep(2)
     } catch (err) {
       console.error("Failed to create campaign:", err)
