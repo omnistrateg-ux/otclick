@@ -531,6 +531,17 @@ async def discover_leads(request: DiscoverRequest) -> DiscoverResponse:
     companies: list[DiscoverCompany] = []
     leads_created = 0
 
+    # Map industry names to HH.ru search queries
+    industry_search_queries = {
+        "retail": "кассир OR продавец-кассир",
+        "horeca": "повар OR официант",
+        "logistics": "курьер OR водитель",
+        "warehouse": "грузчик OR комплектовщик OR сборщик заказов",
+        "construction": "разнорабочий OR маляр",
+        "manufacturing": "оператор линии OR упаковщик",
+        "agriculture": "овощевод OR тепличный рабочий",
+    }
+
     # Map city names to HH.ru area IDs
     area_map = {
         "Москва": 1,
@@ -547,9 +558,12 @@ async def discover_leads(request: DiscoverRequest) -> DiscoverResponse:
 
     area_id = area_map.get(request.city, 1) if request.city else 1
 
+    # Get search query from industry mapping, or use raw industry value
+    search_query = industry_search_queries.get(request.industry, request.industry)
+
     # Fetch employers from HH.ru vacancies (more results than /employers)
     employers = await find_employers_hh(
-        query=request.industry,
+        query=search_query,
         area=area_id,
         per_page=request.max_leads,
     )
