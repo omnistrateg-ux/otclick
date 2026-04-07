@@ -38,6 +38,13 @@ const INDUSTRIES = [
   { id: "agriculture", label: "Агропром", icon: "🌾" },
 ]
 
+const VACANCY_MAPPING: Record<string, string[]> = {
+  retail: ["кассир", "продавец-кассир", "мерчандайзер"],
+  horeca: ["повар", "официант", "бармен"],
+  warehouse: ["грузчик", "комплектовщик", "сборщик заказов"],
+  agriculture: ["овощевод", "тепличный рабочий", "сборщик урожая"],
+}
+
 const CITIES = [
   "Москва",
   "Санкт-Петербург",
@@ -60,6 +67,7 @@ interface DiscoveryModalProps {
 
 export function DiscoveryModal({ open, onOpenChange }: DiscoveryModalProps) {
   const [selectedIndustries, setSelectedIndustries] = useState<string[]>([])
+  const [selectedVacancies, setSelectedVacancies] = useState<string[]>([])
   const [selectedCities, setSelectedCities] = useState<string[]>([])
   const [leadsCount, setLeadsCount] = useState(50)
   const [autoEnrich, setAutoEnrich] = useState(true)
@@ -75,6 +83,7 @@ export function DiscoveryModal({ open, onOpenChange }: DiscoveryModalProps) {
     mutationFn: () =>
       api.discoverLeads({
         industry: selectedIndustries.join(",") || undefined,
+        queries: selectedVacancies.length > 0 ? selectedVacancies : undefined,
         city: selectedCities.join(",") || undefined,
         max_leads: leadsCount,
       }),
@@ -91,8 +100,25 @@ export function DiscoveryModal({ open, onOpenChange }: DiscoveryModalProps) {
   })
 
   const toggleIndustry = (id: string) => {
-    setSelectedIndustries((prev) =>
-      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+    setSelectedIndustries((prev) => {
+      const isRemoving = prev.includes(id)
+      if (isRemoving) {
+        // Remove vacancies for this industry
+        const industryVacancies = VACANCY_MAPPING[id] || []
+        setSelectedVacancies((v) => v.filter((vac) => !industryVacancies.includes(vac)))
+        return prev.filter((i) => i !== id)
+      } else {
+        // Add all vacancies for this industry
+        const industryVacancies = VACANCY_MAPPING[id] || []
+        setSelectedVacancies((v) => [...new Set([...v, ...industryVacancies])])
+        return [...prev, id]
+      }
+    })
+  }
+
+  const toggleVacancy = (vacancy: string) => {
+    setSelectedVacancies((prev) =>
+      prev.includes(vacancy) ? prev.filter((v) => v !== vacancy) : [...prev, vacancy]
     )
   }
 
@@ -115,6 +141,7 @@ export function DiscoveryModal({ open, onOpenChange }: DiscoveryModalProps) {
       setResult(null)
       setError(null)
       setSelectedIndustries([])
+      setSelectedVacancies([])
       setSelectedCities([])
       setLeadsCount(50)
     }, 300)
@@ -164,6 +191,43 @@ export function DiscoveryModal({ open, onOpenChange }: DiscoveryModalProps) {
                   ))}
                 </div>
               </div>
+
+              {/* Vacancies - shown when industries with vacancies are selected */}
+              {selectedIndustries.some((ind) => VACANCY_MAPPING[ind]) && (
+                <div>
+                  <label className="text-sm font-medium text-zinc-300 mb-2 block">
+                    Вакансии для поиска
+                    {selectedVacancies.length > 0 && (
+                      <Badge variant="secondary" className="ml-2">
+                        {selectedVacancies.length} выбрано
+                      </Badge>
+                    )}
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedIndustries
+                      .flatMap((ind) => VACANCY_MAPPING[ind] || [])
+                      .filter((v, i, arr) => arr.indexOf(v) === i)
+                      .map((vacancy) => (
+                        <label
+                          key={vacancy}
+                          className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-all ${
+                            selectedVacancies.includes(vacancy)
+                              ? "border-indigo-500 bg-indigo-500/20"
+                              : "border-zinc-700 bg-zinc-800/50 hover:border-zinc-600"
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedVacancies.includes(vacancy)}
+                            onChange={() => toggleVacancy(vacancy)}
+                            className="h-4 w-4 rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500 focus:ring-offset-0"
+                          />
+                          <span className="text-sm text-zinc-300">{vacancy}</span>
+                        </label>
+                      ))}
+                  </div>
+                </div>
+              )}
 
               {/* Cities */}
               <div>

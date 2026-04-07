@@ -498,6 +498,7 @@ class DiscoverRequest(BaseModel):
     """Discovery request parameters."""
 
     industry: str | None = None
+    queries: list[str] | None = None
     city: str | None = None
     max_leads: int = Field(default=10, ge=1, le=100)
 
@@ -564,8 +565,11 @@ async def discover_leads(request: DiscoverRequest) -> DiscoverResponse:
 
     area_id = area_map.get(request.city, 1) if request.city else 1
 
-    # Get search query from industry mapping, or use raw industry value
-    search_query = industry_search_queries.get(request.industry, request.industry)
+    # Use provided queries if not empty, otherwise fall back to industry mapping
+    if request.queries:
+        search_query = " OR ".join(request.queries)
+    else:
+        search_query = industry_search_queries.get(request.industry, request.industry)
 
     # Fetch employers from HH.ru vacancies (more results than /employers)
     employers = await find_employers_hh(
