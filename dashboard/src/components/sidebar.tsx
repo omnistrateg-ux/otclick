@@ -12,6 +12,7 @@ import {
   UserCheck,
   Settings,
   Zap,
+  Upload,
 } from "lucide-react"
 
 const navigation = [
@@ -19,6 +20,7 @@ const navigation = [
   { name: "Лиды", href: "/leads", icon: Users },
   { name: "Кампании", href: "/campaigns", icon: Mail },
   { name: "Письма", href: "/emails", icon: Send },
+  { name: "Импорт", href: "/import", icon: Upload },
   { name: "Аналитика", href: "/analytics", icon: BarChart3 },
   { name: "Тёплые лиды", href: "/handoffs", icon: UserCheck },
 ]

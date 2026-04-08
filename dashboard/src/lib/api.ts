@@ -269,6 +269,12 @@ export const api = {
       body: JSON.stringify(params),
     }),
 
+  importLeads: (companies: Array<{ company_name: string; email?: string; phone?: string; city?: string; website?: string; source?: string }>) =>
+    fetcher<{ created: number; duplicates: number; errors: number; results: Array<{ company_name: string; status: string; error?: string }> }>("/leads/import", {
+      method: "POST",
+      body: JSON.stringify({ companies }),
+    }),
+
   // Campaigns - extract items from paginated response
   getCampaigns: async (): Promise<Campaign[]> => {
     const response = await fetcher<PaginatedResponse<Campaign>>("/campaigns")

@@ -898,3 +898,123 @@ async def send_campaign(request: SendCampaignRequest) -> SendCampaignResponse:
         sent=sent_count,
         results=results,
     )
+
+
+# Import models
+class ImportCompany(BaseModel):
+    """Single company for import."""
+
+    company_name: str
+    email: str | None = None
+    phone: str | None = None
+    city: str | None = None
+    website: str | None = None
+    source: str = "csv_import"
+
+
+class ImportRequest(BaseModel):
+    """Import request with companies array."""
+
+    companies: list[ImportCompany]
+
+
+class ImportResultItem(BaseModel):
+    """Single import result."""
+
+    company_name: str
+    status: str  # "created", "duplicate", "error"
+    lead_id: str | None = None
+    error: str | None = None
+
+
+class ImportResponse(BaseModel):
+    """Import response."""
+
+    created: int
+    duplicates: int
+    errors: int
+    results: list[ImportResultItem]
+
+
+@router.post("/import", response_model=ImportResponse)
+async def import_leads(request: ImportRequest) -> ImportResponse:
+    """Import leads from CSV data.
+
+    Args:
+        request: Import request with companies array
+
+    Returns:
+        Import results with created/duplicates/errors counts
+    """
+    from urllib.parse import urlparse
+
+    from app.storage.repositories.lead_repo import LeadRepository
+
+    results: list[ImportResultItem] = []
+    created_count = 0
+    duplicates_count = 0
+    errors_count = 0
+
+    async with async_session_factory() as db:
+        lead_repo = LeadRepository(db)
+
+        for company in request.companies:
+            try:
+                # Check for duplicate
+                existing = await lead_repo.find_by_company_name(company.company_name)
+                if existing:
+                    results.append(ImportResultItem(
+                        company_name=company.company_name,
+                        status="duplicate",
+                    ))
+                    duplicates_count += 1
+                    continue
+
+                # Extract domain from website or email
+                domain = None
+                if company.website:
+                    # Clean up website URL
+                    website = company.website
+                    if not website.startswith("http"):
+                        website = f"https://{website}"
+                    parsed = urlparse(website)
+                    domain = parsed.netloc.replace("www.", "")
+                elif company.email and "@" in company.email:
+                    domain = company.email.split("@")[1]
+
+                # Create lead
+                lead = EmployerLead(
+                    company_name=company.company_name,
+                    domain=domain,
+                    source=company.source,
+                    city=company.city,
+                    status=LeadStatus.LEAD_FOUND,
+                    created_at=datetime.now(UTC),
+                    updated_at=datetime.now(UTC),
+                )
+
+                created_lead = await lead_repo.create(lead)
+
+                results.append(ImportResultItem(
+                    company_name=company.company_name,
+                    status="created",
+                    lead_id=str(created_lead.id),
+                ))
+                created_count += 1
+
+            except Exception as e:
+                results.append(ImportResultItem(
+                    company_name=company.company_name,
+                    status="error",
+                    error=str(e),
+                ))
+                errors_count += 1
+
+        await db.commit()
+
+    return ImportResponse(
+        created=created_count,
+        duplicates=duplicates_count,
+        errors=errors_count,
+        results=results,
+    )
