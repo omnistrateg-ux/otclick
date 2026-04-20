@@ -33,11 +33,13 @@ TRANSITIONS: dict[LeadStatus, list[LeadStatus]] = {
         LeadStatus.IN_SEQUENCE,
         LeadStatus.REPLY_RECEIVED,
         LeadStatus.BOUNCED,
+        LeadStatus.COOLDOWN,  # for pause_outreach
     ],
     LeadStatus.IN_SEQUENCE: [
         LeadStatus.REPLY_RECEIVED,
         LeadStatus.ARCHIVED,
         LeadStatus.BOUNCED,
+        LeadStatus.COOLDOWN,  # for pause_outreach
     ],
     LeadStatus.REPLY_RECEIVED: [
         LeadStatus.INTEREST_DETECTED,

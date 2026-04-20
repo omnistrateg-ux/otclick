@@ -56,11 +56,22 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(minute=0, hour="*/6"),
         "options": {"queue": "maintenance"},
     },
+    # Auto-recovery: Check every 30 minutes
+    "auto-recover-pipelines": {
+        "task": "workers.scheduled_tasks.auto_recover_failed_pipelines",
+        "schedule": crontab(minute="*/30"),
+        "options": {"queue": "maintenance"},
+    },
 }
 
 
-@shared_task(name="workers.scheduled_tasks.scheduled_discovery")
-def scheduled_discovery() -> dict[str, Any]:
+@shared_task(
+    name="workers.scheduled_tasks.scheduled_discovery",
+    bind=True,
+    max_retries=2,
+    default_retry_delay=300,
+)
+def scheduled_discovery(self) -> dict[str, Any]:
     """Run scheduled employer discovery.
 
     Returns:
@@ -82,8 +93,13 @@ def scheduled_discovery() -> dict[str, Any]:
     }
 
 
-@shared_task(name="workers.scheduled_tasks.process_pending_followups")
-def process_pending_followups() -> dict[str, Any]:
+@shared_task(
+    name="workers.scheduled_tasks.process_pending_followups",
+    bind=True,
+    max_retries=2,
+    default_retry_delay=120,
+)
+def process_pending_followups(self) -> dict[str, Any]:
     """Process pending follow-up emails.
 
     Returns:
@@ -100,8 +116,8 @@ def process_pending_followups() -> dict[str, Any]:
             lead_repo = LeadRepository(db)
 
             # Find leads in outreach that need follow-up
-            leads = await lead_repo.find_by_status(
-                LeadStatus.OUTREACH_STARTED,
+            leads = await lead_repo.find_by_statuses(
+                [LeadStatus.OUTREACH_SENT, LeadStatus.IN_SEQUENCE],
                 limit=100,
             )
 
@@ -123,8 +139,13 @@ def process_pending_followups() -> dict[str, Any]:
     return asyncio.get_event_loop().run_until_complete(_run())
 
 
-@shared_task(name="workers.scheduled_tasks.generate_daily_report")
-def generate_daily_report() -> dict[str, Any]:
+@shared_task(
+    name="workers.scheduled_tasks.generate_daily_report",
+    bind=True,
+    max_retries=2,
+    default_retry_delay=300,
+)
+def generate_daily_report(self) -> dict[str, Any]:
     """Generate daily analytics report.
 
     Returns:
@@ -191,8 +212,14 @@ def generate_daily_report() -> dict[str, Any]:
     return asyncio.get_event_loop().run_until_complete(_run())
 
 
-@shared_task(name="workers.scheduled_tasks.cleanup_old_data")
+@shared_task(
+    name="workers.scheduled_tasks.cleanup_old_data",
+    bind=True,
+    max_retries=1,
+    default_retry_delay=600,
+)
 def cleanup_old_data(
+    self,
     retention_days: int = 90,
 ) -> dict[str, Any]:
     """Clean up old data beyond retention period.
@@ -230,8 +257,13 @@ def cleanup_old_data(
     return asyncio.get_event_loop().run_until_complete(_run())
 
 
-@shared_task(name="workers.scheduled_tasks.health_check")
-def health_check() -> dict[str, Any]:
+@shared_task(
+    name="workers.scheduled_tasks.health_check",
+    bind=True,
+    max_retries=1,
+    default_retry_delay=30,
+)
+def health_check(self) -> dict[str, Any]:
     """Perform system health check.
 
     Returns:
@@ -279,8 +311,14 @@ def health_check() -> dict[str, Any]:
     return asyncio.get_event_loop().run_until_complete(_run())
 
 
-@shared_task(name="workers.scheduled_tasks.check_stale_leads")
+@shared_task(
+    name="workers.scheduled_tasks.check_stale_leads",
+    bind=True,
+    max_retries=2,
+    default_retry_delay=120,
+)
 def check_stale_leads(
+    self,
     stale_hours: int = 48,
 ) -> dict[str, Any]:
     """Check for stale leads that need attention.
@@ -307,9 +345,9 @@ def check_stale_leads(
             stale_counts = {}
 
             for status in [
-                LeadStatus.DISCOVERED,
+                LeadStatus.LEAD_FOUND,
                 LeadStatus.ENRICHED,
-                LeadStatus.OUTREACH_STARTED,
+                LeadStatus.OUTREACH_SENT,
             ]:
                 leads = await lead_repo.find_stale(
                     status=status,
@@ -334,8 +372,13 @@ def check_stale_leads(
     return asyncio.get_event_loop().run_until_complete(_run())
 
 
-@shared_task(name="workers.scheduled_tasks.retry_failed_tasks")
-def retry_failed_tasks() -> dict[str, Any]:
+@shared_task(
+    name="workers.scheduled_tasks.retry_failed_tasks",
+    bind=True,
+    max_retries=1,
+    default_retry_delay=60,
+)
+def retry_failed_tasks(self) -> dict[str, Any]:
     """Retry failed tasks that can be retried.
 
     Returns:
@@ -352,8 +395,13 @@ def retry_failed_tasks() -> dict[str, Any]:
     }
 
 
-@shared_task(name="workers.scheduled_tasks.update_rate_limits")
-def update_rate_limits() -> dict[str, Any]:
+@shared_task(
+    name="workers.scheduled_tasks.update_rate_limits",
+    bind=True,
+    max_retries=2,
+    default_retry_delay=60,
+)
+def update_rate_limits(self) -> dict[str, Any]:
     """Update rate limit counters (reset daily limits).
 
     Returns:
@@ -382,6 +430,115 @@ def update_rate_limits() -> dict[str, Any]:
         return {
             "keys_deleted": deleted,
             "pattern": pattern,
+        }
+
+    return asyncio.get_event_loop().run_until_complete(_run())
+
+
+@shared_task(
+    name="workers.scheduled_tasks.auto_recover_failed_pipelines",
+    bind=True,
+    max_retries=1,
+    default_retry_delay=120,
+)
+def auto_recover_failed_pipelines(
+    self,
+    max_age_hours: int = 24,
+    max_retries_per_run: int = 3,
+) -> dict[str, Any]:
+    """Auto-recover failed pipeline runs.
+
+    Finds failed runs and attempts to retry them automatically.
+    Only retries runs that haven't exceeded max retries.
+
+    Args:
+        max_age_hours: Only recover runs newer than this
+        max_retries_per_run: Max auto-retry attempts per run
+
+    Returns:
+        Recovery results
+    """
+    import asyncio
+
+    async def _run() -> dict[str, Any]:
+        from app.observability import get_lead_traces, retry_pipeline_run
+        from app.storage.database import async_session_factory
+        from app.storage.redis import get_redis
+        from app.storage.repositories.lead_repo import LeadRepository
+
+        recovered = 0
+        failed = 0
+        skipped = 0
+
+        async with async_session_factory() as db:
+            lead_repo = LeadRepository(db)
+
+            # Get leads with recent activity
+            from app.models.enums import LeadStatus
+
+            active_statuses = [
+                LeadStatus.LEAD_FOUND,
+                LeadStatus.ENRICHED,
+                LeadStatus.SCORED,
+                LeadStatus.EMAIL_READY,
+            ]
+
+            leads = await lead_repo.find_by_statuses(active_statuses, limit=100)
+
+            for lead in leads:
+                lead_id = str(lead.id)
+
+                # Get recent traces
+                traces = await get_lead_traces(lead_id, limit=5)
+
+                for trace in traces:
+                    if trace.status != "failed":
+                        continue
+
+                    # Check retry count
+                    redis = await get_redis()
+                    retry_key = f"auto_recovery_count:{lead_id}:{trace.run_id}"
+                    retry_count = await redis.get(retry_key)
+                    retry_count = int(retry_count) if retry_count else 0
+
+                    if retry_count >= max_retries_per_run:
+                        skipped += 1
+                        continue
+
+                    # Attempt recovery
+                    try:
+                        result = await retry_pipeline_run(lead_id, trace.run_id)
+
+                        if result.get("success"):
+                            recovered += 1
+                            # Increment retry count
+                            await redis.incr(retry_key)
+                            await redis.expire(retry_key, 86400 * 7)  # 7 days TTL
+
+                            logger.info(
+                                f"[AUTO-RECOVERY] Recovered | lead_id={lead_id} | "
+                                f"old_run_id={trace.run_id} | "
+                                f"new_run_id={result.get('new_run_id')}"
+                            )
+                        else:
+                            failed += 1
+
+                    except Exception as e:
+                        failed += 1
+                        logger.error(
+                            f"[AUTO-RECOVERY] Failed | lead_id={lead_id} | "
+                            f"run_id={trace.run_id} | error={e}"
+                        )
+
+        logger.info(
+            f"[AUTO-RECOVERY] Complete | recovered={recovered} | "
+            f"failed={failed} | skipped={skipped}"
+        )
+
+        return {
+            "recovered": recovered,
+            "failed": failed,
+            "skipped": skipped,
         }
 
     return asyncio.get_event_loop().run_until_complete(_run())

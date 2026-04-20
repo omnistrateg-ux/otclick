@@ -6,8 +6,8 @@ UTC = timezone.utc
 
 
 def utcnow() -> datetime:
-    """Return current UTC datetime (naive, without timezone)."""
-    return datetime.utcnow()
+    """Return current UTC datetime (timezone-aware)."""
+    return datetime.now(UTC)
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field

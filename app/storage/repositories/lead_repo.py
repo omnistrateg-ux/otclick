@@ -1,9 +1,12 @@
 """Lead repository for database operations."""
 
+import logging
 from datetime import datetime, timezone
 from uuid import UUID
 
 from sqlalchemy import delete, func, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.db import EmployerLeadDB
@@ -11,6 +14,7 @@ from app.models.domain import EmployerLead
 from app.models.enums import LeadStatus
 
 UTC = timezone.utc
+logger = logging.getLogger(__name__)
 
 class LeadRepository:
     """Repository for EmployerLead operations."""
@@ -53,6 +57,74 @@ class LeadRepository:
         await self.session.flush()
 
         return lead
+
+    async def create_if_not_exists(
+        self,
+        lead: EmployerLead,
+    ) -> tuple[EmployerLead, bool]:
+        """Create lead if not exists, return existing otherwise.
+
+        Uses upsert to handle race conditions.
+
+        Args:
+            lead: Lead to create
+
+        Returns:
+            Tuple of (lead, was_created)
+        """
+        # Check if exists first
+        existing = await self.find_by_company_and_domain(
+            lead.company_name,
+            lead.domain,
+        )
+        if existing:
+            return existing, False
+
+        # Try to create with conflict handling
+        try:
+            await self.create(lead)
+            await self.session.commit()
+            return lead, True
+        except IntegrityError:
+            await self.session.rollback()
+            # Race condition - another process created it
+            existing = await self.find_by_company_and_domain(
+                lead.company_name,
+                lead.domain,
+            )
+            if existing:
+                return existing, False
+            raise
+
+    async def find_by_company_and_domain(
+        self,
+        company_name: str,
+        domain: str | None,
+    ) -> EmployerLead | None:
+        """Find lead by company name and domain.
+
+        Args:
+            company_name: Company name
+            domain: Domain (can be None)
+
+        Returns:
+            Lead if found
+        """
+        query = select(EmployerLeadDB).where(
+            EmployerLeadDB.company_name == company_name
+        )
+        if domain:
+            query = query.where(EmployerLeadDB.domain == domain)
+        else:
+            query = query.where(EmployerLeadDB.domain.is_(None))
+
+        result = await self.session.execute(query)
+        db_lead = result.scalar_one_or_none()
+
+        if not db_lead:
+            return None
+
+        return self._to_domain(db_lead)
 
     async def get_by_id(self, lead_id: UUID) -> EmployerLead | None:
         """Get lead by ID.
@@ -153,6 +225,61 @@ class LeadRepository:
 
         return lead
 
+    async def find_by_statuses(
+        self,
+        statuses: list[LeadStatus],
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[EmployerLead]:
+        """List leads by multiple statuses.
+
+        Args:
+            statuses: List of statuses to filter by
+            limit: Maximum results
+            offset: Pagination offset
+
+        Returns:
+            List of leads
+        """
+        status_values = [s.value for s in statuses]
+        result = await self.session.execute(
+            select(EmployerLeadDB)
+            .where(EmployerLeadDB.status.in_(status_values))
+            .order_by(EmployerLeadDB.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+
+        return [self._to_domain(row) for row in result.scalars()]
+
+    async def find_stale(
+        self,
+        status: LeadStatus,
+        older_than: datetime,
+        limit: int = 100,
+    ) -> list[EmployerLead]:
+        """Find stale leads that haven't been updated.
+
+        Args:
+            status: Lead status to filter by
+            older_than: Find leads with status_changed_at before this time
+            limit: Maximum results
+
+        Returns:
+            List of stale leads
+        """
+        result = await self.session.execute(
+            select(EmployerLeadDB)
+            .where(
+                EmployerLeadDB.status == status.value,
+                EmployerLeadDB.status_changed_at < older_than,
+            )
+            .order_by(EmployerLeadDB.status_changed_at.asc())
+            .limit(limit)
+        )
+
+        return [self._to_domain(row) for row in result.scalars()]
+
     async def update_status(
         self,
         lead_id: UUID,
@@ -241,6 +368,125 @@ class LeadRepository:
             return None
 
         return await self.get_by_id(uuid_id)
+
+    async def get_for_update(
+        self,
+        lead_id: str,
+        *,
+        nowait: bool = False,
+        skip_locked: bool = False,
+    ) -> EmployerLead | None:
+        """Get lead with SELECT FOR UPDATE lock.
+
+        Use for critical sections where concurrent updates must be prevented.
+        MUST be called within a transaction.
+
+        Args:
+            lead_id: Lead ID as string
+            nowait: If True, raise error instead of waiting for lock
+            skip_locked: If True, skip if row is locked (returns None)
+
+        Returns:
+            Lead or None if not found (or skipped if skip_locked)
+
+        Example:
+            async with session.begin():
+                lead = await lead_repo.get_for_update(lead_id)
+                if lead:
+                    # safely modify lead
+                    await lead_repo.update(lead)
+        """
+        try:
+            uuid_id = UUID(lead_id)
+        except (ValueError, TypeError):
+            return None
+
+        query = (
+            select(EmployerLeadDB)
+            .where(EmployerLeadDB.id == uuid_id)
+            .with_for_update(nowait=nowait, skip_locked=skip_locked)
+        )
+
+        result = await self.session.execute(query)
+        db_lead = result.scalar_one_or_none()
+
+        if not db_lead:
+            return None
+
+        return self._to_domain(db_lead)
+
+    async def transition_status(
+        self,
+        lead_id: str,
+        from_status: LeadStatus,
+        to_status: LeadStatus,
+        reason: str | None = None,
+        run_id: str | None = None,
+    ) -> tuple[EmployerLead | None, bool]:
+        """Atomically transition lead status with optimistic locking.
+
+        Only transitions if current status matches from_status.
+        This prevents race conditions without SELECT FOR UPDATE.
+
+        Args:
+            lead_id: Lead ID
+            from_status: Expected current status
+            to_status: Target status
+            reason: Reason for transition
+            run_id: Pipeline run ID for tracking
+
+        Returns:
+            Tuple of (updated lead or None, success bool)
+        """
+        try:
+            uuid_id = UUID(lead_id)
+        except (ValueError, TypeError):
+            return None, False
+
+        now = datetime.now(UTC)
+
+        values: dict = {
+            "status": to_status.value,
+            "status_changed_at": now,
+            "updated_at": now,
+        }
+
+        if to_status == LeadStatus.ARCHIVED:
+            values["archived_at"] = now
+            values["archived_reason"] = reason
+
+        if to_status == LeadStatus.OPTED_OUT:
+            values["opted_out"] = True
+            values["opted_out_at"] = now
+
+        # Conditional update - only if status matches
+        result = await self.session.execute(
+            update(EmployerLeadDB)
+            .where(
+                EmployerLeadDB.id == uuid_id,
+                EmployerLeadDB.status == from_status.value,
+            )
+            .values(**values)
+            .returning(EmployerLeadDB)
+        )
+
+        db_lead = result.scalar_one_or_none()
+
+        if not db_lead:
+            # Either lead not found or status changed
+            logger.warning(
+                f"Transition failed for lead {lead_id}: "
+                f"expected {from_status.value}, got different status or not found"
+            )
+            return None, False
+
+        lead = self._to_domain(db_lead)
+        logger.info(
+            f"Lead {lead_id} transitioned: {from_status.value} -> {to_status.value}"
+            + (f" (run_id={run_id})" if run_id else "")
+        )
+
+        return lead, True
 
     async def find_paginated(
         self,
