@@ -154,6 +154,20 @@ export interface EmailsResponse {
   pages: number
 }
 
+export interface TestEmailRequest {
+  to_email: string
+  subject: string
+  body: string
+  from_name?: string
+}
+
+export interface TestEmailResponse {
+  success: boolean
+  message_id?: string
+  sent_at?: string
+  error?: string
+}
+
 export interface LeadDetail extends Lead {
   events: LeadEvent[]
   emails: LeadEmail[]
@@ -321,4 +335,11 @@ export const api = {
   },
 
   getEmail: (id: string) => fetcher<Email>(`/emails/${id}`),
+
+  // Test email (manual send)
+  sendTestEmail: (data: TestEmailRequest) =>
+    fetcher<TestEmailResponse>("/emails/test", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
 }

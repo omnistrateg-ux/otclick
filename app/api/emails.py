@@ -88,6 +88,24 @@ class PreviewEmailResponse(BaseModel):
     quality_check: dict[str, Any]
 
 
+class TestEmailRequest(BaseModel):
+    """Test email request - for manual testing without lead."""
+
+    to_email: str = Field(..., pattern=r"^[\w\.\-\+]+@[\w\.-]+\.\w+$")
+    subject: str = Field(..., min_length=1, max_length=200)
+    body: str = Field(..., min_length=1)
+    from_name: str = Field(default="Отклик", max_length=100)
+
+
+class TestEmailResponse(BaseModel):
+    """Test email response."""
+
+    success: bool
+    message_id: str | None = None
+    sent_at: datetime | None = None
+    error: str | None = None
+
+
 def _get_email_status(email) -> str:
     """Get email status from boolean fields."""
     if email.replied:
@@ -401,6 +419,49 @@ async def preview_email(request: PreviewEmailRequest) -> PreviewEmailResponse:
                 "passed": len(issues) == 0,
                 "issues": issues,
             },
+        )
+
+
+@router.post("/test", response_model=TestEmailResponse)
+async def send_test_email(request: TestEmailRequest) -> TestEmailResponse:
+    """Send a test email manually.
+
+    This endpoint allows sending test emails without requiring a lead.
+    Use this to test email delivery to yourself before campaigns.
+
+    Args:
+        request: Test email request with recipient, subject, and body
+
+    Returns:
+        Result of the send attempt
+    """
+    from app.email.delivery import EmailDelivery
+
+    delivery = EmailDelivery(from_name=request.from_name)
+
+    try:
+        # Build and send email directly via SMTP
+        msg = delivery._build_mime_message(
+            to_email=request.to_email,
+            to_name=request.to_email.split("@")[0],
+            subject=request.subject,
+            body=request.body,
+            unsubscribe_url=None,
+        )
+
+        message_id = msg["Message-ID"]
+        delivery._send_smtp(msg, request.to_email)
+
+        return TestEmailResponse(
+            success=True,
+            message_id=message_id,
+            sent_at=datetime.now(UTC),
+        )
+
+    except Exception as e:
+        return TestEmailResponse(
+            success=False,
+            error=str(e),
         )
 
 
