@@ -77,6 +77,41 @@ class CampaignHealth:
     is_healthy: bool
     should_pause: bool
     pause_reason: str | None = None
+    sample_size_met: bool = True  # Whether min sample size was met
+
+
+@dataclass
+class ReputationScore:
+    """Sender or domain reputation score."""
+
+    entity: str  # Email or domain
+    entity_type: str  # "sender" or "domain"
+    score: float  # 0.0 - 1.0
+    rating: str  # "excellent", "good", "warning", "poor", "unknown"
+    total_sent: int
+    total_delivered: int
+    total_bounced: int
+    total_complained: int
+    delivery_rate: float
+    bounce_rate: float
+    complaint_rate: float
+    last_updated: datetime | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "entity": self.entity,
+            "entity_type": self.entity_type,
+            "score": self.score,
+            "rating": self.rating,
+            "total_sent": self.total_sent,
+            "total_delivered": self.total_delivered,
+            "total_bounced": self.total_bounced,
+            "total_complained": self.total_complained,
+            "delivery_rate": self.delivery_rate,
+            "bounce_rate": self.bounce_rate,
+            "complaint_rate": self.complaint_rate,
+            "last_updated": self.last_updated.isoformat() if self.last_updated else None,
+        }
 
 
 # ============================================================================
@@ -126,12 +161,18 @@ MAX_BODY_LENGTH = 5000
 # Campaign Health Thresholds
 # ============================================================================
 
-# Auto-pause thresholds
+# Auto-pause thresholds (defaults, use settings for override)
 BOUNCE_RATE_WARNING = 0.05  # 5%
 BOUNCE_RATE_CRITICAL = 0.10  # 10% - pause campaign
 COMPLAINT_RATE_WARNING = 0.001  # 0.1%
 COMPLAINT_RATE_CRITICAL = 0.005  # 0.5% - pause campaign
 MIN_EMAILS_FOR_RATE_CALC = 50  # Need at least 50 emails to calculate rates
+
+# Reputation score thresholds
+REPUTATION_EXCELLENT = 0.95
+REPUTATION_GOOD = 0.85
+REPUTATION_WARNING = 0.70
+REPUTATION_POOR = 0.50
 
 
 # ============================================================================
@@ -213,6 +254,22 @@ class OutboundService:
             errors.extend(profile_errors)
             warnings.extend(profile_warnings)
             passed.extend(profile_passed)
+
+        # 5. Global suppression list check (async)
+        if contact.email:
+            is_suppressed, suppression_reason = await self.check_suppression(
+                contact.email
+            )
+            if is_suppressed:
+                errors.append(f"email_suppressed:{suppression_reason}")
+                # Remove pending marker
+                if "suppression_check_pending" in passed:
+                    passed.remove("suppression_check_pending")
+            else:
+                # Replace pending with passed
+                if "suppression_check_pending" in passed:
+                    passed.remove("suppression_check_pending")
+                passed.append("email_not_suppressed")
 
         # Determine status
         if errors:
@@ -346,6 +403,10 @@ class OutboundService:
             errors.append("contact_opted_out")
         else:
             passed.append("contact_not_opted_out")
+
+        # Check global suppression list (async check done in validate_pre_send)
+        # This is marked for later async check
+        passed.append("suppression_check_pending")
 
         # Check bounce count
         if contact.bounce_count and contact.bounce_count >= 3:
@@ -765,8 +826,18 @@ class OutboundService:
         total_bounced = int(await redis.get(bounced_key) or 0)
         total_complained = int(await redis.get(complained_key) or 0)
 
+        # Use settings for thresholds (with fallback to defaults)
+        min_sample = settings.auto_pause_min_sample_size
+        bounce_warning = settings.bounce_rate_warning
+        bounce_critical = settings.bounce_rate_critical
+        complaint_warning = settings.complaint_rate_warning
+        complaint_critical = settings.complaint_rate_critical
+
+        # Check if we have enough data for rate calculation
+        sample_size_met = total_sent >= min_sample
+
         # Calculate rates
-        if total_sent >= MIN_EMAILS_FOR_RATE_CALC:
+        if sample_size_met:
             bounce_rate = total_bounced / total_sent
             complaint_rate = total_complained / total_sent
         else:
@@ -778,21 +849,28 @@ class OutboundService:
         should_pause = False
         pause_reason = None
 
-        if total_sent >= MIN_EMAILS_FOR_RATE_CALC:
-            if bounce_rate >= BOUNCE_RATE_CRITICAL:
+        # Only evaluate health if sample size is met
+        if sample_size_met:
+            if bounce_rate >= bounce_critical:
                 is_healthy = False
                 should_pause = True
                 pause_reason = f"bounce_rate_critical:{bounce_rate:.2%}"
-            elif complaint_rate >= COMPLAINT_RATE_CRITICAL:
+            elif complaint_rate >= complaint_critical:
                 is_healthy = False
                 should_pause = True
                 pause_reason = f"complaint_rate_critical:{complaint_rate:.2%}"
-            elif bounce_rate >= BOUNCE_RATE_WARNING:
+            elif bounce_rate >= bounce_warning:
                 is_healthy = False
                 pause_reason = f"bounce_rate_warning:{bounce_rate:.2%}"
-            elif complaint_rate >= COMPLAINT_RATE_WARNING:
+            elif complaint_rate >= complaint_warning:
                 is_healthy = False
                 pause_reason = f"complaint_rate_warning:{complaint_rate:.2%}"
+        else:
+            # Log that we don't have enough data yet
+            logger.debug(
+                f"[OUTBOUND] Campaign {campaign_id} has {total_sent}/{min_sample} "
+                f"emails - waiting for min sample size before health evaluation"
+            )
 
         health = CampaignHealth(
             campaign_id=campaign_id,
@@ -805,6 +883,7 @@ class OutboundService:
             is_healthy=is_healthy,
             should_pause=should_pause,
             pause_reason=pause_reason,
+            sample_size_met=sample_size_met,
         )
 
         if should_pause:
@@ -1033,3 +1112,355 @@ class OutboundService:
         )
 
         return metrics
+
+    # ========================================================================
+    # Global Suppression List
+    # ========================================================================
+
+    async def add_to_suppression_list(
+        self,
+        email: str,
+        reason: str = "manual",
+        expires_days: int | None = None,
+    ) -> bool:
+        """Add email to global suppression list.
+
+        Args:
+            email: Email to suppress
+            reason: Reason for suppression (manual, bounce, complaint, unsubscribe)
+            expires_days: Days until suppression expires (None = permanent)
+
+        Returns:
+            True if added successfully
+        """
+        from app.storage.redis import get_redis
+
+        redis = await get_redis()
+        email = email.lower().strip()
+
+        key = f"suppression:email:{email}"
+        value = f"{reason}:{datetime.now(UTC).isoformat()}"
+
+        if expires_days:
+            await redis.set(key, value, ex=expires_days * 86400)
+        else:
+            await redis.set(key, value)
+
+        # Also add to suppression set for listing
+        await redis.sadd("suppression:list", email)
+
+        logger.info(f"[OUTBOUND] Added to suppression list | email={email} | reason={reason}")
+        return True
+
+    async def remove_from_suppression_list(self, email: str) -> bool:
+        """Remove email from global suppression list.
+
+        Args:
+            email: Email to remove
+
+        Returns:
+            True if removed successfully
+        """
+        from app.storage.redis import get_redis
+
+        redis = await get_redis()
+        email = email.lower().strip()
+
+        key = f"suppression:email:{email}"
+        deleted = await redis.delete(key)
+        await redis.srem("suppression:list", email)
+
+        if deleted:
+            logger.info(f"[OUTBOUND] Removed from suppression list | email={email}")
+        return deleted > 0
+
+    async def check_suppression(self, email: str) -> tuple[bool, str | None]:
+        """Check if email is in suppression list.
+
+        Args:
+            email: Email to check
+
+        Returns:
+            Tuple of (is_suppressed, reason)
+        """
+        from app.storage.redis import get_redis
+
+        redis = await get_redis()
+        email = email.lower().strip()
+
+        key = f"suppression:email:{email}"
+        value = await redis.get(key)
+
+        if value:
+            # Parse reason from stored value
+            parts = value.split(":", 1)
+            reason = parts[0] if parts else "unknown"
+            return True, reason
+
+        return False, None
+
+    async def get_suppression_list(self, limit: int = 100) -> list[dict[str, Any]]:
+        """Get emails in suppression list.
+
+        Args:
+            limit: Maximum emails to return
+
+        Returns:
+            List of suppressed emails with metadata
+        """
+        from app.storage.redis import get_redis
+
+        redis = await get_redis()
+        emails = await redis.smembers("suppression:list")
+
+        results = []
+        for email in list(emails)[:limit]:
+            key = f"suppression:email:{email}"
+            value = await redis.get(key)
+            if value:
+                parts = value.split(":", 1)
+                reason = parts[0] if parts else "unknown"
+                added_at = parts[1] if len(parts) > 1 else None
+                results.append({
+                    "email": email,
+                    "reason": reason,
+                    "added_at": added_at,
+                })
+
+        return results
+
+    async def bulk_add_suppression(
+        self,
+        emails: list[str],
+        reason: str = "bulk_import",
+    ) -> int:
+        """Bulk add emails to suppression list.
+
+        Args:
+            emails: List of emails to suppress
+            reason: Reason for suppression
+
+        Returns:
+            Number of emails added
+        """
+        from app.storage.redis import get_redis
+
+        redis = await get_redis()
+        added = 0
+        now = datetime.now(UTC).isoformat()
+
+        pipe = redis.pipeline()
+        for email in emails:
+            email = email.lower().strip()
+            if not email:
+                continue
+            key = f"suppression:email:{email}"
+            pipe.set(key, f"{reason}:{now}")
+            pipe.sadd("suppression:list", email)
+            added += 1
+
+        await pipe.execute()
+
+        logger.info(f"[OUTBOUND] Bulk added to suppression list | count={added} | reason={reason}")
+        return added
+
+    # ========================================================================
+    # Sender/Domain Reputation
+    # ========================================================================
+
+    async def get_sender_reputation(
+        self,
+        sender_email: str,
+        days: int = 30,
+    ) -> ReputationScore:
+        """Calculate sender reputation score.
+
+        Score is based on:
+        - Delivery rate (weight: 50%)
+        - Bounce rate (weight: 30%)
+        - Complaint rate (weight: 20%)
+
+        Args:
+            sender_email: Sender email address
+            days: Days to look back
+
+        Returns:
+            ReputationScore with calculated metrics
+        """
+        from app.storage.redis import get_redis
+
+        redis = await get_redis()
+        now = datetime.now(UTC)
+
+        total_sent = 0
+        total_delivered = 0
+        total_bounced = 0
+        total_complained = 0
+
+        for i in range(days):
+            day = (now - timedelta(days=i)).strftime("%Y-%m-%d")
+
+            sent = int(await redis.get(f"throttle:sender:{sender_email}:{day}") or 0)
+            delivered = int(
+                await redis.get(f"deliverability:delivered:sender:{sender_email}:{day}") or 0
+            )
+            bounced = int(
+                await redis.get(f"deliverability:bounces:sender:{sender_email}:{day}") or 0
+            )
+            complained = int(
+                await redis.get(f"deliverability:complaints:sender:{sender_email}:{day}") or 0
+            )
+
+            total_sent += sent
+            total_delivered += delivered
+            total_bounced += bounced
+            total_complained += complained
+
+        return self._calculate_reputation(
+            entity=sender_email,
+            entity_type="sender",
+            total_sent=total_sent,
+            total_delivered=total_delivered,
+            total_bounced=total_bounced,
+            total_complained=total_complained,
+        )
+
+    async def get_domain_reputation(
+        self,
+        domain: str,
+        days: int = 30,
+    ) -> ReputationScore:
+        """Calculate domain reputation score.
+
+        Args:
+            domain: Recipient domain
+            days: Days to look back
+
+        Returns:
+            ReputationScore with calculated metrics
+        """
+        from app.storage.redis import get_redis
+
+        redis = await get_redis()
+        now = datetime.now(UTC)
+
+        total_sent = 0
+        total_delivered = 0
+        total_bounced = 0
+        total_complained = 0
+
+        for i in range(days):
+            day = (now - timedelta(days=i)).strftime("%Y-%m-%d")
+
+            sent = int(await redis.get(f"throttle:domain:{domain}:{day}") or 0)
+            delivered = int(
+                await redis.get(f"deliverability:delivered:domain:{domain}:{day}") or 0
+            )
+            bounced = int(
+                await redis.get(f"deliverability:bounces:domain:{domain}:{day}") or 0
+            )
+            complained = int(
+                await redis.get(f"deliverability:complaints:domain:{domain}:{day}") or 0
+            )
+
+            total_sent += sent
+            total_delivered += delivered
+            total_bounced += bounced
+            total_complained += complained
+
+        return self._calculate_reputation(
+            entity=domain,
+            entity_type="domain",
+            total_sent=total_sent,
+            total_delivered=total_delivered,
+            total_bounced=total_bounced,
+            total_complained=total_complained,
+        )
+
+    def _calculate_reputation(
+        self,
+        entity: str,
+        entity_type: str,
+        total_sent: int,
+        total_delivered: int,
+        total_bounced: int,
+        total_complained: int,
+    ) -> ReputationScore:
+        """Calculate reputation score from metrics.
+
+        Formula:
+        - delivery_rate contributes 50%
+        - (1 - bounce_rate) contributes 30%
+        - (1 - complaint_rate * 100) contributes 20% (complaints are weighted heavily)
+
+        Args:
+            entity: Email or domain
+            entity_type: "sender" or "domain"
+            total_sent: Total emails sent
+            total_delivered: Total delivered
+            total_bounced: Total bounced
+            total_complained: Total complaints
+
+        Returns:
+            ReputationScore
+        """
+        if total_sent == 0:
+            return ReputationScore(
+                entity=entity,
+                entity_type=entity_type,
+                score=0.0,
+                rating="unknown",
+                total_sent=0,
+                total_delivered=0,
+                total_bounced=0,
+                total_complained=0,
+                delivery_rate=0.0,
+                bounce_rate=0.0,
+                complaint_rate=0.0,
+                last_updated=datetime.now(UTC),
+            )
+
+        delivery_rate = total_delivered / total_sent
+        bounce_rate = total_bounced / total_sent
+        complaint_rate = total_complained / total_sent
+
+        # Calculate weighted score
+        # Delivery rate: 50% weight
+        delivery_score = delivery_rate * 0.50
+
+        # Bounce rate: 30% weight (inverted - lower is better)
+        bounce_score = max(0, (1 - bounce_rate * 2)) * 0.30
+
+        # Complaint rate: 20% weight (inverted and heavily weighted)
+        # Even 1% complaint rate should significantly hurt score
+        complaint_score = max(0, (1 - complaint_rate * 100)) * 0.20
+
+        score = delivery_score + bounce_score + complaint_score
+        score = max(0, min(1, score))  # Clamp to 0-1
+
+        # Determine rating
+        if score >= REPUTATION_EXCELLENT:
+            rating = "excellent"
+        elif score >= REPUTATION_GOOD:
+            rating = "good"
+        elif score >= REPUTATION_WARNING:
+            rating = "warning"
+        elif score >= REPUTATION_POOR:
+            rating = "poor"
+        else:
+            rating = "critical"
+
+        return ReputationScore(
+            entity=entity,
+            entity_type=entity_type,
+            score=round(score, 3),
+            rating=rating,
+            total_sent=total_sent,
+            total_delivered=total_delivered,
+            total_bounced=total_bounced,
+            total_complained=total_complained,
+            delivery_rate=round(delivery_rate, 4),
+            bounce_rate=round(bounce_rate, 4),
+            complaint_rate=round(complaint_rate, 4),
+            last_updated=datetime.now(UTC),
+        )
