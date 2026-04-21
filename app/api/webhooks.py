@@ -472,20 +472,11 @@ async def handle_resend_inbound(
                 "subject": subject,
             }
 
-        # Update email_messages
+        # Update email_messages via ORM
         original_email.replied = True
         original_email.replied_at = datetime.now(UTC)
         original_email.reply_text = reply_text or reply_html
-
-        await db.execute(
-            original_email.__class__.__table__.update()
-            .where(original_email.__class__.id == original_email.id)
-            .values(
-                replied=True,
-                replied_at=datetime.now(UTC),
-                reply_text=reply_text or reply_html,
-            )
-        )
+        await email_repo.update(original_email)
 
         # Get and update lead status
         lead = await lead_repo.get(str(original_email.lead_id))

@@ -547,14 +547,13 @@ async def get_email_tracking(email_id: str) -> dict[str, Any]:
         return {
             "email_id": email_id,
             "sent_at": email.sent_at.isoformat() if email.sent_at else None,
-            "delivered": email.delivery_status == "delivered",
-            "opened": email.opened_at is not None,
+            "delivered": email.delivered or False,
+            "opened": email.opened or False,
             "opened_at": email.opened_at.isoformat() if email.opened_at else None,
-            "clicked": email.clicked_at is not None,
-            "clicked_at": email.clicked_at.isoformat() if email.clicked_at else None,
-            "replied": email.replied_at is not None,
+            "clicked": email.clicked or False,
+            "replied": email.replied or False,
             "replied_at": email.replied_at.isoformat() if email.replied_at else None,
-            "bounced": email.delivery_status == "bounced",
+            "bounced": email.bounced or False,
         }
 
 
@@ -578,16 +577,24 @@ async def resend_email(email_id: str) -> dict[str, Any]:
         if not email:
             raise HTTPException(404, f"Email {email_id} not found")
 
-        if email.delivery_status not in ["failed", "bounced"]:
+        # Can only resend bounced emails
+        if not email.bounced:
             raise HTTPException(
                 400,
-                f"Cannot resend email with status: {email.delivery_status}",
+                "Cannot resend email: only bounced emails can be resent",
             )
+
+        # Get recipient email from contact
+        from app.storage.repositories.contact_repo import ContactRepository
+        contact_repo = ContactRepository(db)
+        contact = await contact_repo.get_by_id(email.contact_id) if email.contact_id else None
+        if not contact or not contact.email:
+            raise HTTPException(400, "Cannot resend: contact email not found")
 
         email_service = EmailService(db=db)
         new_email = await email_service.send_email(
-            lead_id=email.lead_id,
-            to_email=email.to_email,
+            lead_id=str(email.lead_id),
+            to_email=contact.email,
             subject=email.subject,
             body=email.body,
             email_type=email.email_type,
