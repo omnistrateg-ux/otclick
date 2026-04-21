@@ -28,6 +28,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     setup_logging()
     logger.info(f"Starting {settings.app_name} v{settings.app_version}")
 
+    # Validate security configuration
+    settings.validate_or_raise()
+
     # Initialize Sentry
     from app.monitoring.sentry import init_sentry
 
@@ -99,10 +102,20 @@ def create_app() -> FastAPI:
         app.add_middleware(RateLimitMiddleware)
 
     # CORS middleware
+    # Fix security issue: can't use credentials with allow_origins=["*"]
+    cors_origins = settings.cors_origins_list
+    cors_credentials = settings.cors_allow_credentials
+    if cors_origins == ["*"] and cors_credentials:
+        logger.warning(
+            "CORS: Disabling allow_credentials because allow_origins is '*'. "
+            "Set specific origins to enable credentials."
+        )
+        cors_credentials = False
+
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.cors_origins_list,
-        allow_credentials=settings.cors_allow_credentials,
+        allow_origins=cors_origins,
+        allow_credentials=cors_credentials,
         allow_methods=["*"],
         allow_headers=["*"],
     )

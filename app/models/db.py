@@ -278,13 +278,27 @@ class OutreachCampaignDB(Base):
     segment_filter: Mapped[str | None] = mapped_column(String(50))
     min_score: Mapped[float | None] = mapped_column(Float)
     max_daily_emails: Mapped[int] = mapped_column(Integer, default=50)
+    daily_discovery_limit: Mapped[int] = mapped_column(Integer, default=100)
+
+    # Targeting
+    industries: Mapped[list] = mapped_column(JSON, default=list)
+    regions: Mapped[list] = mapped_column(JSON, default=list)
 
     # Status
+    status: Mapped[str] = mapped_column(String(20), default="draft")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     paused_at: Mapped[datetime | None] = mapped_column(DateTime)
 
+    # Statistics
+    leads_discovered: Mapped[int] = mapped_column(Integer, default=0)
+    leads_qualified: Mapped[int] = mapped_column(Integer, default=0)
+    leads_converted: Mapped[int] = mapped_column(Integer, default=0)
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
     started_at: Mapped[datetime | None] = mapped_column(DateTime)
 
 
@@ -436,26 +450,26 @@ class ManagerHandoffDB(Base):
 
     id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     lead_id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("employer_leads.id"))
-    qualification_id: Mapped[UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("lead_qualifications.id")
+    qualification_id: Mapped[UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("lead_qualifications.id"), nullable=True
     )
 
     # Who
     company_name: Mapped[str] = mapped_column(String(500), nullable=False)
-    contact_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    contact_name: Mapped[str | None] = mapped_column(String(255))
     contact_email: Mapped[str | None] = mapped_column(String(255))
     contact_phone: Mapped[str | None] = mapped_column(String(50))
-    contact_role: Mapped[str] = mapped_column(String(100), nullable=False)
+    contact_role: Mapped[str | None] = mapped_column(String(100))
 
     # Context
-    segment: Mapped[str] = mapped_column(String(50), nullable=False)
+    segment: Mapped[str | None] = mapped_column(String(50))
     city: Mapped[str | None] = mapped_column(String(100))
     company_size: Mapped[str | None] = mapped_column(String(50))
     hiring_intensity: Mapped[str | None] = mapped_column(String(20))
 
     # Why important
-    why_this_lead_matters: Mapped[str] = mapped_column(Text, nullable=False)
-    lead_score: Mapped[float] = mapped_column(Float, nullable=False)
+    why_this_lead_matters: Mapped[str | None] = mapped_column(Text)
+    lead_score: Mapped[float | None] = mapped_column(Float)
 
     # What happened
     interest_signals: Mapped[list] = mapped_column(JSON, default=list)
@@ -464,16 +478,27 @@ class ManagerHandoffDB(Base):
     conversation_history: Mapped[str | None] = mapped_column(Text)
 
     # Recommendation
-    suggested_next_step: Mapped[str] = mapped_column(Text, nullable=False)
+    suggested_next_step: Mapped[str | None] = mapped_column(Text)
     talking_points: Mapped[list] = mapped_column(JSON, default=list)
 
     # Handoff status
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    priority: Mapped[str] = mapped_column(String(20), default="normal")
     manager_id: Mapped[str | None] = mapped_column(String(100))
+    notes: Mapped[str | None] = mapped_column(Text)
     notified_via: Mapped[str | None] = mapped_column(String(20))
     notified_at: Mapped[datetime | None] = mapped_column(DateTime)
     accepted_at: Mapped[datetime | None] = mapped_column(DateTime)
+    rejected_at: Mapped[datetime | None] = mapped_column(DateTime)
+    rejection_reason: Mapped[str | None] = mapped_column(Text)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime)
+    outcome: Mapped[str | None] = mapped_column(Text)
+    deal_value: Mapped[float | None] = mapped_column(Float)
     call_scheduled_at: Mapped[datetime | None] = mapped_column(DateTime)
     call_result: Mapped[str | None] = mapped_column(String(50))
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 class DomainEventDB(Base):

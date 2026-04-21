@@ -1,15 +1,19 @@
 """Repository module for database operations."""
 
+from app.storage.repositories.campaign_repo import CampaignRepository
 from app.storage.repositories.company_repo import CompanyRepository
 from app.storage.repositories.contact_repo import ContactRepository
 from app.storage.repositories.email_repo import EmailRepository
 from app.storage.repositories.event_repo import EventRepository
+from app.storage.repositories.handoff_repo import HandoffRepository
 from app.storage.repositories.lead_repo import LeadRepository
 
 __all__ = [
-    "LeadRepository",
+    "CampaignRepository",
     "CompanyRepository",
     "ContactRepository",
-    "EventRepository",
     "EmailRepository",
+    "EventRepository",
+    "HandoffRepository",
+    "LeadRepository",
 ]

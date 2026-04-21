@@ -90,6 +90,33 @@ def verify_webhook_signature(
     return hmac.compare_digest(f"sha256={expected}", signature)
 
 
+async def _verify_signature(request: Request, signature: str | None) -> None:
+    """Verify webhook signature if required.
+
+    Args:
+        request: HTTP request
+        signature: Signature from header
+
+    Raises:
+        HTTPException: If signature verification fails
+    """
+    if not settings.webhook_signature_required:
+        return
+
+    webhook_secret = settings.webhook_secret
+    if not webhook_secret:
+        logger.warning("Webhook signature required but no secret configured")
+        return
+
+    body = await request.body()
+    if not verify_webhook_signature(body, signature, webhook_secret.get_secret_value()):
+        logger.warning(
+            f"Invalid webhook signature for {request.method} {request.url.path}",
+            extra={"client_ip": request.client.host if request.client else "unknown"},
+        )
+        raise HTTPException(401, "Invalid webhook signature")
+
+
 @router.post("/email-events")
 async def handle_email_event(
     payload: EmailEventPayload,
@@ -106,11 +133,7 @@ async def handle_email_event(
     Returns:
         Acknowledgment
     """
-    # Verify signature in production
-    # if settings.webhook_secret:
-    #     body = await request.body()
-    #     if not verify_webhook_signature(body, x_webhook_signature, settings.webhook_secret):
-    #         raise HTTPException(401, "Invalid signature")
+    await _verify_signature(request, x_webhook_signature)
 
     logger.info(f"Received email event: {payload.event_type} for {payload.email_id}")
 
@@ -257,6 +280,8 @@ async def handle_reply(
     Returns:
         Acknowledgment
     """
+    await _verify_signature(request, x_webhook_signature)
+
     logger.info(f"Reply received from {payload.from_email}")
 
     from app.storage.repositories.email_repo import EmailRepository
