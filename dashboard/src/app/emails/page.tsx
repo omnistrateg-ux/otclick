@@ -48,6 +48,12 @@ import {
   X,
 } from "lucide-react"
 
+// Strip HTML tags for plain text preview
+function stripHtml(html: string | undefined): string {
+  if (!html) return ""
+  return html.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim()
+}
+
 const EMAIL_STATUSES = [
   { value: "all", label: "Все статусы" },
   { value: "sent", label: "Отправлено" },
@@ -279,7 +285,7 @@ export default function EmailsPage() {
                         </TableCell>
                         <TableCell>
                           <span className="text-zinc-400 truncate block max-w-[200px]">
-                            {email.body?.slice(0, 60)}...
+                            {stripHtml(email.body).slice(0, 60)}...
                           </span>
                         </TableCell>
                         <TableCell>
@@ -427,11 +433,10 @@ export default function EmailsPage() {
                 {/* Email Body */}
                 <div>
                   <h4 className="text-sm font-medium text-zinc-400 mb-3">Текст письма</h4>
-                  <div className="p-4 rounded-xl bg-zinc-800/50 border border-zinc-700">
-                    <p className="text-zinc-200 whitespace-pre-wrap leading-relaxed">
-                      {selectedEmail.body}
-                    </p>
-                  </div>
+                  <div
+                    className="p-4 rounded-xl bg-zinc-800/50 border border-zinc-700 text-zinc-200 leading-relaxed prose prose-invert prose-sm max-w-none"
+                    dangerouslySetInnerHTML={{ __html: selectedEmail.body || "" }}
+                  />
                 </div>
 
                 {/* Thread */}
@@ -466,9 +471,10 @@ export default function EmailsPage() {
                           <p className="text-sm font-medium text-zinc-300 mb-1">
                             {message.subject}
                           </p>
-                          <p className="text-sm text-zinc-400 whitespace-pre-wrap">
-                            {message.body}
-                          </p>
+                          <div
+                            className="text-sm text-zinc-400 prose prose-invert prose-sm max-w-none"
+                            dangerouslySetInnerHTML={{ __html: message.body || "" }}
+                          />
                         </div>
                       ))}
                     </div>
