@@ -215,8 +215,8 @@ class TestLeadOrchestrator:
             deal_value=50000.0,
         )
 
-        # Lead stays at HANDED_TO_MANAGER, conversion is tracked via event
-        assert lead.status == LeadStatus.HANDED_TO_MANAGER
+        # Lead transitions to CONVERTED status
+        assert lead.status == LeadStatus.CONVERTED
         assert event.event_type == EventType.HANDOFF_COMPLETED
 
     def test_invalid_transition_raises(self) -> None:
@@ -300,7 +300,7 @@ class TestFullLifecycle:
 
         # 10. Conversion
         lead, event = orchestrator.mark_converted(lead, deal_value=100000.0)
-        assert lead.status == LeadStatus.HANDED_TO_MANAGER  # Stays, but conversion recorded
+        assert lead.status == LeadStatus.CONVERTED
 
     def test_lifecycle_with_negative_reply(self) -> None:
         """Test lifecycle when lead refuses."""

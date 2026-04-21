@@ -241,6 +241,7 @@ class LeadOrchestrator:
             LeadStatus.INTEREST_DETECTED: EventType.QUALIFICATION_COMPLETED,
             LeadStatus.REFUSED: EventType.LEAD_DISQUALIFIED,
             LeadStatus.HANDED_TO_MANAGER: EventType.HANDOFF_CREATED,
+            LeadStatus.CONVERTED: EventType.HANDOFF_COMPLETED,
             LeadStatus.OPTED_OUT: EventType.LEAD_DISQUALIFIED,
             LeadStatus.BOUNCED: EventType.EMAIL_BOUNCED,
         }
@@ -501,36 +502,29 @@ class LeadOrchestrator:
         *,
         deal_value: float | None = None,
         actor: str = "system",
+        pipeline_run_id: str | None = None,
     ) -> tuple[EmployerLead, Event]:
-        """Mark lead as converted (stays at HANDED_TO_MANAGER, records conversion).
+        """Mark lead as converted.
 
-        Note: There's no separate CONVERTED status - conversion is tracked
-        in metadata while lead remains at HANDED_TO_MANAGER.
+        Transitions lead to CONVERTED status (terminal).
 
         Args:
             lead: Converted lead
             deal_value: Deal value
             actor: Who marked
+            pipeline_run_id: Pipeline run ID
 
         Returns:
             Tuple of (lead, event)
         """
-        # Lead stays at HANDED_TO_MANAGER, but we record conversion event
-        event = create_event(
-            EventType.HANDOFF_COMPLETED,
-            lead_id=str(lead.id),
+        return self.transition(
+            lead,
+            LeadStatus.CONVERTED,
             actor=actor,
-            data={
-                "deal_value": deal_value,
-                "converted": True,
-            },
+            reason=f"Deal closed, value: {deal_value}",
+            metadata={"deal_value": deal_value},
+            pipeline_run_id=pipeline_run_id,
         )
-
-        logger.info(
-            f"Lead {lead.id} converted with deal value {deal_value}"
-        )
-
-        return lead, event
 
     def mark_lost(
         self,

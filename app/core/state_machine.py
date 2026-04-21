@@ -54,7 +54,11 @@ TRANSITIONS: dict[LeadStatus, list[LeadStatus]] = {
     LeadStatus.QUALIFIED: [
         LeadStatus.HANDED_TO_MANAGER,
     ],
-    LeadStatus.HANDED_TO_MANAGER: [],  # терминальное состояние
+    LeadStatus.HANDED_TO_MANAGER: [
+        LeadStatus.CONVERTED,  # сделка закрыта
+        LeadStatus.ARCHIVED,  # потеряли клиента
+    ],
+    LeadStatus.CONVERTED: [],  # терминальное состояние
     LeadStatus.BOUNCED: [
         LeadStatus.ARCHIVED,
     ],

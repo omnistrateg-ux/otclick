@@ -123,7 +123,7 @@ class TestLeadStateMachine:
         """Terminal states have no transitions."""
         assert state_machine.get_valid_transitions(LeadStatus.OPTED_OUT) == []
         assert state_machine.get_valid_transitions(LeadStatus.DUPLICATE) == []
-        assert state_machine.get_valid_transitions(LeadStatus.HANDED_TO_MANAGER) == []
+        assert state_machine.get_valid_transitions(LeadStatus.CONVERTED) == []
 
     def test_get_valid_transitions_from_reply_received(
         self, state_machine: LeadStateMachine
@@ -235,7 +235,7 @@ class TestLeadStateMachine:
         """Terminal states are correctly identified."""
         assert state_machine.is_terminal(LeadStatus.OPTED_OUT)
         assert state_machine.is_terminal(LeadStatus.DUPLICATE)
-        assert state_machine.is_terminal(LeadStatus.HANDED_TO_MANAGER)
+        assert state_machine.is_terminal(LeadStatus.CONVERTED)
 
     def test_is_terminal_for_non_terminal_states(
         self, state_machine: LeadStateMachine

@@ -30,7 +30,7 @@ PIPELINE_STEPS = {
         "required_status": "ENRICHED",
     },
     "qualify": {
-        "task": "workers.discovery_tasks.qualify_lead_task",
+        "task": "workers.discovery_tasks.qualify_lead",
         "depends_on": ["score"],
         "required_status": "SCORED",
     },
