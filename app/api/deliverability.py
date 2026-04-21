@@ -359,8 +359,8 @@ async def validate_pre_send(
 @router.get("/throttle/status")
 async def get_throttle_status(
     sender_email: str = Query(...),
-    recipient_domain: str = Query(default=""),
-    campaign_id: str = Query(default=None),
+    recipient_domain: str | None = Query(default=None),
+    campaign_id: str | None = Query(default=None),
 ) -> dict[str, Any]:
     """Check current throttle status.
 

@@ -342,11 +342,15 @@ async def send_email(request: SendEmailRequest) -> EmailResponse:
             raise HTTPException(500, "Failed to send email")
 
         return EmailResponse(
-            id=email.id,
-            lead_id=email.lead_id,
-            to_email=email.to_email,
+            id=str(email.id),
+            lead_id=str(email.lead_id),
+            company_name=lead.company_name if lead else None,
+            contact_name=None,
+            contact_email=request.to_email,
+            to_email=request.to_email,
             subject=email.subject,
-            email_type=email.email_type.value,
+            body=email.body,
+            email_type=email.email_type.value if hasattr(email.email_type, 'value') else str(email.email_type),
             status=email.delivery_status or "sent",
             sent_at=email.sent_at,
             opened_at=None,
