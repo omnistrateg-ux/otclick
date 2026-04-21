@@ -62,6 +62,12 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(minute="*/30"),
         "options": {"queue": "maintenance"},
     },
+    # Campaign health: Check every 15 minutes
+    "check-campaign-health": {
+        "task": "workers.scheduled_tasks.check_campaign_health",
+        "schedule": crontab(minute="*/15"),
+        "options": {"queue": "maintenance"},
+    },
 }
 
 
@@ -539,6 +545,44 @@ def auto_recover_failed_pipelines(
             "recovered": recovered,
             "failed": failed,
             "skipped": skipped,
+        }
+
+    return asyncio.run(_run())
+
+
+@shared_task(
+    name="workers.scheduled_tasks.check_campaign_health",
+    bind=True,
+    max_retries=1,
+    default_retry_delay=60,
+)
+def check_campaign_health(self) -> dict[str, Any]:
+    """Check campaign health and auto-pause unhealthy campaigns.
+
+    Returns:
+        Health check results
+    """
+    import asyncio
+
+    async def _run() -> dict[str, Any]:
+        from app.services.outbound_service import OutboundService
+
+        outbound = OutboundService()
+
+        # Auto-pause unhealthy campaigns
+        paused_campaigns = await outbound.auto_pause_unhealthy_campaigns()
+
+        if paused_campaigns:
+            logger.warning(
+                f"[CAMPAIGN-HEALTH] Paused {len(paused_campaigns)} campaigns: {paused_campaigns}"
+            )
+        else:
+            logger.debug("[CAMPAIGN-HEALTH] All campaigns healthy")
+
+        return {
+            "campaigns_checked": "all",
+            "campaigns_paused": paused_campaigns,
+            "paused_count": len(paused_campaigns),
         }
 
     return asyncio.run(_run())

@@ -509,6 +509,7 @@ def process_bounce(
 
     async def _run() -> dict[str, Any]:
         from app.services.compliance_service import ComplianceService
+        from app.services.outbound_service import OutboundService
         from app.storage.database import async_session_factory
         from app.storage.redis import check_idempotency, distributed_lock
         from app.storage.repositories.email_repo import EmailRepository
@@ -526,6 +527,15 @@ def process_bounce(
             if not email:
                 return {"success": False, "error": "Email not found"}
 
+            # Record bounce for deliverability metrics
+            outbound = OutboundService()
+            await outbound.record_bounce(
+                recipient_email=email.to_email or "",
+                bounce_type=bounce_type,
+                campaign_id=str(email.campaign_id) if email.campaign_id else None,
+                lead_id=str(email.lead_id) if email.lead_id else None,
+            )
+
             # Update email status
             email.delivery_status = "bounced"
             email.bounce_type = bounce_type
@@ -534,7 +544,7 @@ def process_bounce(
 
             # For hard bounces, add to blacklist
             if bounce_type == "hard" and email.to_email:
-                compliance = ComplianceService()
+                compliance = ComplianceService(db)
                 await compliance.add_to_blacklist(
                     email.to_email,
                     reason=f"Hard bounce: {bounce_reason}",

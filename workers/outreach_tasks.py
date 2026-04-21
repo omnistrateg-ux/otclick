@@ -71,11 +71,14 @@ def start_outreach(
         from app.observability import record_step_skipped
         from app.services.compliance_service import ComplianceService
         from app.services.email_service import EmailService
+        from app.services.outbound_service import OutboundService
         from app.storage.database import async_session_factory
         from app.storage.redis import check_pipeline_step, distributed_lock
         from app.storage.repositories.lead_repo import LeadRepository
+        from app.storage.repositories.contact_repo import ContactRepository
 
         tracer = TracedTask(lead_id, run_id, step_name)
+        outbound = OutboundService()
 
         # Pipeline step idempotency check
         if await check_pipeline_step(lead_id, step_name, run_id):
@@ -83,6 +86,17 @@ def start_outreach(
             return {"success": True, "skipped": True, "reason": "duplicate_step", "run_id": run_id}
 
         await tracer.start()
+
+        # Check if campaign is paused
+        if campaign_id:
+            is_paused, pause_reason = await outbound.is_campaign_paused(campaign_id)
+            if is_paused:
+                await tracer.skip(f"campaign_paused:{pause_reason}")
+                logger.warning(
+                    f"[OUTREACH] Campaign paused | campaign={campaign_id} | "
+                    f"reason={pause_reason} | lead_id={lead_id}"
+                )
+                return {"success": False, "skipped": True, "reason": f"campaign_paused:{pause_reason}"}
 
         # Distributed lock
         async with distributed_lock(f"lead:{lead_id}:outreach") as acquired:
@@ -92,6 +106,7 @@ def start_outreach(
 
             async with async_session_factory() as db:
                 lead_repo = LeadRepository(db)
+                contact_repo = ContactRepository(db)
 
                 # Use SELECT FOR UPDATE
                 lead = await lead_repo.get_for_update(lead_id)
@@ -104,11 +119,58 @@ def start_outreach(
                     await tracer.skip(f"wrong_status:{lead.status.value}")
                     return {"success": True, "skipped": True, "reason": "wrong_status"}
 
-                # Check compliance
-                compliance = ComplianceService()
-                if not await compliance.can_send_email(lead_id, lead.contacts[0].email if lead.contacts else None):
-                    await tracer.error("Compliance check failed")
-                    return {"success": False, "error": "Compliance check failed"}
+                # Get primary contact
+                contacts = await contact_repo.find_by_lead(str(lead.id))
+                contact = contacts[0] if contacts else None
+
+                if not contact or not contact.email:
+                    await tracer.error("No contact email")
+                    return {"success": False, "error": "No contact with email"}
+
+                # Pre-send validation (blocks on critical issues)
+                validation = await outbound.validate_pre_send(
+                    lead=lead,
+                    contact=contact,
+                    subject="",  # Will be validated after generation
+                    body="",
+                )
+                if not validation.can_send:
+                    await tracer.error(f"Pre-send validation failed: {validation.errors}")
+                    logger.warning(
+                        f"[OUTREACH] Pre-send validation BLOCKED | lead_id={lead_id} | "
+                        f"errors={validation.errors}"
+                    )
+                    return {"success": False, "error": f"validation_failed:{validation.errors}"}
+
+                # Check throttle before proceeding
+                recipient_domain = contact.email.split("@")[1] if "@" in contact.email else ""
+                from app.config.settings import settings
+                sender_email = settings.smtp_from_email
+
+                throttle = await outbound.check_throttle(
+                    sender_email=sender_email,
+                    recipient_domain=recipient_domain,
+                    campaign_id=campaign_id,
+                )
+                if not throttle.allowed:
+                    await tracer.skip(f"throttled:{throttle.reason}")
+                    logger.info(
+                        f"[OUTREACH] Throttled | lead_id={lead_id} | "
+                        f"reason={throttle.reason} | retry_after={throttle.retry_after_seconds}s"
+                    )
+                    return {
+                        "success": False,
+                        "skipped": True,
+                        "reason": f"throttled:{throttle.reason}",
+                        "retry_after_seconds": throttle.retry_after_seconds,
+                    }
+
+                # Check legacy compliance
+                compliance = ComplianceService(db)
+                opted_out, opt_reason = await compliance.check_opt_out(lead, contact)
+                if opted_out:
+                    await tracer.error(f"Compliance check failed: {opt_reason}")
+                    return {"success": False, "error": f"compliance_failed:{opt_reason}"}
 
                 # Generate first touch email
                 llm_router = get_router()
@@ -127,15 +189,46 @@ def start_outreach(
                 result = await email_agent.execute(task)
 
                 if result.success:
-                    email_service = EmailService(db=db)
+                    subject = result.data.get("subject", "")
+                    body = result.data.get("body", "")
+
+                    # Validate generated content before sending
+                    content_validation = await outbound.validate_pre_send(
+                        lead=lead,
+                        contact=contact,
+                        subject=subject,
+                        body=body,
+                    )
+                    if not content_validation.can_send:
+                        await tracer.error(f"Content validation failed: {content_validation.errors}")
+                        logger.warning(
+                            f"[OUTREACH] Content validation BLOCKED | lead_id={lead_id} | "
+                            f"errors={content_validation.errors}"
+                        )
+                        return {"success": False, "error": f"content_validation_failed:{content_validation.errors}"}
+
+                    if content_validation.warnings:
+                        logger.info(
+                            f"[OUTREACH] Content warnings | lead_id={lead_id} | "
+                            f"warnings={content_validation.warnings}"
+                        )
+
+                    email_service = EmailService(db=db, llm_router=get_router())
 
                     # Send email
                     email = await email_service.send_email(
                         lead_id=lead_id,
-                        to_email=lead.contacts[0].email if lead.contacts else None,
-                        subject=result.data.get("subject", ""),
-                        body=result.data.get("body", ""),
+                        to_email=contact.email,
+                        subject=subject,
+                        body=body,
                         email_type=EmailType.FIRST_TOUCH,
+                        campaign_id=campaign_id,
+                    )
+
+                    # Record send for throttle tracking
+                    await outbound.record_send(
+                        sender_email=sender_email,
+                        recipient_email=contact.email,
                         campaign_id=campaign_id,
                     )
 
