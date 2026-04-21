@@ -20,21 +20,28 @@ import { formatDateTime } from "@/lib/utils"
 import {
   UserCheck,
   Building2,
-  Mail,
-  Phone,
   ExternalLink,
   CheckCircle,
   Clock,
   AlertCircle,
+  User,
+  MessageSquare,
 } from "lucide-react"
 
-const interestLevelConfig: Record<
+const priorityConfig: Record<
   string,
-  { label: string; color: string; icon: typeof CheckCircle }
+  { label: string; color: string; bgColor: string; icon: typeof CheckCircle }
 > = {
-  HIGH: { label: "Высокий", color: "text-emerald-400", icon: CheckCircle },
-  MEDIUM: { label: "Средний", color: "text-amber-400", icon: Clock },
-  LOW: { label: "Низкий", color: "text-zinc-400", icon: AlertCircle },
+  high: { label: "Высокий", color: "text-emerald-400", bgColor: "bg-emerald-500/20", icon: CheckCircle },
+  normal: { label: "Обычный", color: "text-amber-400", bgColor: "bg-amber-500/20", icon: Clock },
+  low: { label: "Низкий", color: "text-zinc-400", bgColor: "bg-zinc-500/20", icon: AlertCircle },
+}
+
+const statusConfig: Record<string, { label: string; variant: "default" | "warning" | "success" }> = {
+  pending: { label: "Ожидает", variant: "warning" },
+  accepted: { label: "Принят", variant: "default" },
+  completed: { label: "Завершён", variant: "success" },
+  rejected: { label: "Отклонён", variant: "default" },
 }
 
 export default function HandoffsPage() {
@@ -57,9 +64,9 @@ export default function HandoffsPage() {
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-zinc-400">Высокий интерес</p>
+                  <p className="text-sm text-zinc-400">Высокий приоритет</p>
                   <p className="mt-1 text-3xl font-bold text-zinc-100">
-                    {handoffs?.filter((h) => h.interest_level === "HIGH").length || 0}
+                    {handoffs?.filter((h) => h.priority === "high").length || 0}
                   </p>
                 </div>
                 <CheckCircle className="h-8 w-8 text-emerald-400" />
@@ -71,9 +78,9 @@ export default function HandoffsPage() {
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-zinc-400">Средний интерес</p>
+                  <p className="text-sm text-zinc-400">Ожидают принятия</p>
                   <p className="mt-1 text-3xl font-bold text-zinc-100">
-                    {handoffs?.filter((h) => h.interest_level === "MEDIUM").length || 0}
+                    {handoffs?.filter((h) => h.status === "pending").length || 0}
                   </p>
                 </div>
                 <Clock className="h-8 w-8 text-amber-400" />
@@ -85,7 +92,7 @@ export default function HandoffsPage() {
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-zinc-400">Всего тёплых</p>
+                  <p className="text-sm text-zinc-400">Всего передач</p>
                   <p className="mt-1 text-3xl font-bold text-zinc-100">
                     {handoffs?.length || 0}
                   </p>
@@ -99,7 +106,7 @@ export default function HandoffsPage() {
         {/* Handoffs Table */}
         <Card>
           <CardHeader>
-            <CardTitle>Список тёплых лидов</CardTitle>
+            <CardTitle>Список передач менеджерам</CardTitle>
           </CardHeader>
           <CardContent>
             {isLoading ? (
@@ -113,20 +120,19 @@ export default function HandoffsPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Компания</TableHead>
-                    <TableHead>Контакт</TableHead>
-                    <TableHead>Email</TableHead>
-                    <TableHead>Интерес</TableHead>
+                    <TableHead>Менеджер</TableHead>
+                    <TableHead>Приоритет</TableHead>
                     <TableHead>Статус</TableHead>
+                    <TableHead>Тезисы</TableHead>
                     <TableHead>Дата</TableHead>
                     <TableHead></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {handoffs.map((handoff) => {
-                    const interestConfig =
-                      interestLevelConfig[handoff.interest_level] ||
-                      interestLevelConfig.LOW
-                    const InterestIcon = interestConfig.icon
+                    const prioConfig = priorityConfig[handoff.priority] || priorityConfig.normal
+                    const PrioIcon = prioConfig.icon
+                    const statConfig = statusConfig[handoff.status] || statusConfig.pending
 
                     return (
                       <TableRow key={handoff.id}>
@@ -139,57 +145,42 @@ export default function HandoffsPage() {
                             {handoff.company_name}
                           </Link>
                         </TableCell>
-                        <TableCell className="text-zinc-300">
-                          {handoff.contact_name}
+                        <TableCell>
+                          <div className="flex items-center gap-2 text-zinc-300">
+                            <User className="h-4 w-4 text-zinc-500" />
+                            {handoff.manager_id || "—"}
+                          </div>
                         </TableCell>
                         <TableCell>
-                          <a
-                            href={`mailto:${handoff.contact_email}`}
-                            className="flex items-center gap-1 text-indigo-400 hover:text-indigo-300"
-                          >
-                            <Mail className="h-3 w-3" />
-                            {handoff.contact_email}
-                          </a>
-                        </TableCell>
-                        <TableCell>
-                          <span
-                            className={`flex items-center gap-1 ${interestConfig.color}`}
-                          >
-                            <InterestIcon className="h-4 w-4" />
-                            {interestConfig.label}
-                          </span>
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            variant={
-                              handoff.status === "pending"
-                                ? "warning"
-                                : handoff.status === "contacted"
-                                ? "default"
-                                : "success"
-                            }
-                          >
-                            {handoff.status === "pending"
-                              ? "Ожидает"
-                              : handoff.status === "contacted"
-                              ? "Связались"
-                              : "Закрыт"}
+                          <Badge variant="outline" className={`gap-1.5 ${prioConfig.color} ${prioConfig.bgColor} border-0`}>
+                            <PrioIcon className="h-3 w-3" />
+                            {prioConfig.label}
                           </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={statConfig.variant}>
+                            {statConfig.label}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {handoff.talking_points?.length > 0 ? (
+                            <div className="flex items-center gap-1 text-zinc-400">
+                              <MessageSquare className="h-3 w-3" />
+                              <span className="text-sm">{handoff.talking_points.length} тезисов</span>
+                            </div>
+                          ) : (
+                            <span className="text-zinc-500">—</span>
+                          )}
                         </TableCell>
                         <TableCell className="text-zinc-500">
                           {formatDateTime(handoff.created_at)}
                         </TableCell>
                         <TableCell>
-                          <div className="flex gap-1">
+                          <Link href={`/leads/${handoff.lead_id}`}>
                             <Button variant="ghost" size="icon" className="h-8 w-8">
-                              <Phone className="h-4 w-4" />
+                              <ExternalLink className="h-4 w-4" />
                             </Button>
-                            <Link href={`/leads/${handoff.lead_id}`}>
-                              <Button variant="ghost" size="icon" className="h-8 w-8">
-                                <ExternalLink className="h-4 w-4" />
-                              </Button>
-                            </Link>
-                          </div>
+                          </Link>
                         </TableCell>
                       </TableRow>
                     )
@@ -200,7 +191,7 @@ export default function HandoffsPage() {
               <div className="flex flex-col items-center justify-center py-12">
                 <UserCheck className="h-12 w-12 text-zinc-600 mb-4" />
                 <p className="text-zinc-400 text-lg font-medium">
-                  Нет тёплых лидов
+                  Нет передач менеджерам
                 </p>
                 <p className="text-zinc-500 text-sm mt-1">
                   Лиды с высоким интересом появятся здесь автоматически
@@ -214,27 +205,27 @@ export default function HandoffsPage() {
         <Card className="border-indigo-600/20 bg-indigo-600/5">
           <CardContent className="pt-6">
             <h3 className="font-medium text-indigo-400 mb-2">
-              Как работать с тёплыми лидами
+              Как работать с передачами
             </h3>
             <ul className="space-y-2 text-sm text-zinc-400">
               <li className="flex items-start gap-2">
                 <CheckCircle className="h-4 w-4 text-emerald-400 mt-0.5" />
                 <span>
-                  <strong className="text-zinc-300">Высокий интерес:</strong>{" "}
+                  <strong className="text-zinc-300">Высокий приоритет:</strong>{" "}
                   Свяжитесь в течение 24 часов
                 </span>
               </li>
               <li className="flex items-start gap-2">
                 <Clock className="h-4 w-4 text-amber-400 mt-0.5" />
                 <span>
-                  <strong className="text-zinc-300">Средний интерес:</strong>{" "}
+                  <strong className="text-zinc-300">Обычный приоритет:</strong>{" "}
                   Свяжитесь в течение 48 часов
                 </span>
               </li>
               <li className="flex items-start gap-2">
                 <AlertCircle className="h-4 w-4 text-zinc-400 mt-0.5" />
                 <span>
-                  <strong className="text-zinc-300">Низкий интерес:</strong>{" "}
+                  <strong className="text-zinc-300">Низкий приоритет:</strong>{" "}
                   Добавьте в follow-up последовательность
                 </span>
               </li>

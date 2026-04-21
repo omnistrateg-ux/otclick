@@ -374,22 +374,23 @@ export default function DashboardPage() {
                           {handoff.company_name}
                         </p>
                         <p className="text-xs text-zinc-400">
-                          {handoff.contact_name} • {handoff.contact_email}
+                          {handoff.status === "pending" ? "Ожидает" : handoff.status === "accepted" ? "Принят" : "Завершён"}
+                          {handoff.manager_id && ` • ${handoff.manager_id}`}
                         </p>
                       </div>
                       <Badge
                         variant={
-                          handoff.interest_level === "HIGH"
+                          handoff.priority === "high"
                             ? "success"
-                            : handoff.interest_level === "MEDIUM"
+                            : handoff.priority === "normal"
                             ? "warning"
                             : "secondary"
                         }
                       >
-                        {handoff.interest_level === "HIGH"
+                        {handoff.priority === "high"
                           ? "Высокий"
-                          : handoff.interest_level === "MEDIUM"
-                          ? "Средний"
+                          : handoff.priority === "normal"
+                          ? "Обычный"
                           : "Низкий"}
                       </Badge>
                     </Link>

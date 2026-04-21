@@ -346,7 +346,7 @@ export function CampaignModal({ open, onOpenChange }: CampaignModalProps) {
                     </p>
                   </div>
                 </div>
-                <p className="text-2xl font-bold text-emerald-400">247</p>
+                <p className="text-2xl font-bold text-emerald-400">—</p>
               </div>
 
               {/* Error Message */}

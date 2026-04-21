@@ -90,12 +90,13 @@ export interface Handoff {
   id: string
   lead_id: string
   company_name: string
-  contact_name: string
-  contact_email: string
+  manager_id: string
   status: string
-  interest_level: string
-  notes?: string
+  priority: string
+  talking_points: string[]
   created_at: string
+  accepted_at?: string
+  completed_at?: string
 }
 
 export interface LeadEvent {
