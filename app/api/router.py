@@ -21,6 +21,7 @@ from app.api.platform import router as platform_router
 from app.api.playbooks import router as playbooks_router
 from app.api.quality import router as quality_router
 from app.api.revenue import router as revenue_router
+from app.api.sales import router as sales_router
 from app.api.webhooks import router as webhooks_router
 from app.auth.api_key import require_api_key
 
@@ -52,3 +53,4 @@ router.include_router(capacity_router, dependencies=auth_dependency)
 router.include_router(ops_router, dependencies=auth_dependency)
 router.include_router(platform_router, dependencies=auth_dependency)
 router.include_router(governance_router, dependencies=auth_dependency)
+router.include_router(sales_router, dependencies=auth_dependency)
