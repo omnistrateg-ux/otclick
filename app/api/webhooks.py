@@ -63,6 +63,56 @@ class ReplyPayload(BaseModel):
     received_at: datetime | None = None
 
 
+class ResendInboundEmail(BaseModel):
+    """Resend inbound webhook payload.
+
+    https://resend.com/docs/dashboard/webhooks/inbound
+    """
+
+    # Resend uses 'from' but it's a Python keyword
+    from_: str | None = None
+    to: list[str] | str | None = None
+    subject: str | None = None
+    text: str | None = None
+    html: str | None = None
+    headers: list[dict[str, str]] | None = None
+    attachments: list[dict] | None = None
+
+    class Config:
+        populate_by_name = True
+
+    @property
+    def in_reply_to(self) -> str | None:
+        """Extract In-Reply-To header."""
+        if not self.headers:
+            return None
+        for h in self.headers:
+            if h.get("name", "").lower() == "in-reply-to":
+                return h.get("value")
+        return None
+
+    @property
+    def message_id(self) -> str | None:
+        """Extract Message-ID header."""
+        if not self.headers:
+            return None
+        for h in self.headers:
+            if h.get("name", "").lower() == "message-id":
+                return h.get("value")
+        return None
+
+    @property
+    def references(self) -> list[str]:
+        """Extract References header (chain of message IDs)."""
+        if not self.headers:
+            return []
+        for h in self.headers:
+            if h.get("name", "").lower() == "references":
+                # References is space-separated list of message IDs
+                return h.get("value", "").split()
+        return []
+
+
 def verify_webhook_signature(
     payload: bytes,
     signature: str | None,
@@ -330,6 +380,163 @@ async def handle_reply(
             )
 
     return {"status": "processed"}
+
+
+@router.post("/resend/inbound")
+async def handle_resend_inbound(
+    request: Request,
+) -> dict[str, Any]:
+    """Handle Resend inbound email webhook.
+
+    When a recipient replies to our email, Resend sends the reply here.
+    We match it to the original email and update the lead status.
+
+    Webhook URL: https://176.126.166.94:8443/api/v1/webhooks/resend/inbound
+
+    Args:
+        request: Raw request with JSON body
+
+    Returns:
+        Processing result
+    """
+    from app.core.state_machine import LeadStatus
+    from app.events.definitions import EventType
+    from app.events.helpers import create_event
+    from app.storage.repositories.email_repo import EmailRepository
+    from app.storage.repositories.lead_repo import LeadRepository
+
+    # Parse JSON body (Resend uses 'from' which is a Python keyword)
+    body = await request.json()
+
+    # Handle 'from' field renamed to 'from_'
+    if "from" in body:
+        body["from_"] = body.pop("from")
+
+    payload = ResendInboundEmail(**body)
+
+    sender_email = payload.from_ or ""
+    subject = payload.subject or ""
+    reply_text = payload.text or ""
+    reply_html = payload.html or ""
+
+    logger.info(
+        f"[Resend Inbound] Reply received | from={sender_email} | subject={subject[:50]}"
+    )
+
+    async with async_session_factory() as db:
+        email_repo = EmailRepository(db)
+        lead_repo = LeadRepository(db)
+
+        original_email = None
+
+        # Strategy 1: Match by In-Reply-To header (most reliable)
+        if payload.in_reply_to:
+            # Clean Message-ID (remove angle brackets if present)
+            msg_id = payload.in_reply_to.strip("<>")
+            original_email = await email_repo.find_by_message_id(msg_id)
+            if original_email:
+                logger.info(f"[Resend Inbound] Matched by In-Reply-To: {msg_id}")
+
+        # Strategy 2: Match by References header
+        if not original_email and payload.references:
+            for ref in payload.references:
+                msg_id = ref.strip("<>")
+                original_email = await email_repo.find_by_message_id(msg_id)
+                if original_email:
+                    logger.info(f"[Resend Inbound] Matched by References: {msg_id}")
+                    break
+
+        # Strategy 3: Match by subject (remove Re: prefix)
+        if not original_email and subject:
+            clean_subject = subject
+            for prefix in ["Re:", "RE:", "Ответ:", "re:", "Fwd:", "FWD:"]:
+                if clean_subject.startswith(prefix):
+                    clean_subject = clean_subject[len(prefix):].strip()
+            # Also try matching with sender email
+            original_email = await email_repo.find_by_subject_and_recipient(
+                subject=clean_subject,
+                recipient=sender_email,
+            )
+            if original_email:
+                logger.info(f"[Resend Inbound] Matched by subject: {clean_subject[:30]}")
+
+        if not original_email:
+            logger.warning(
+                f"[Resend Inbound] Could not match reply | from={sender_email} | "
+                f"subject={subject[:50]} | in_reply_to={payload.in_reply_to}"
+            )
+            return {
+                "status": "unmatched",
+                "message": "Could not find original email",
+                "from": sender_email,
+                "subject": subject,
+            }
+
+        # Update email_messages
+        original_email.replied = True
+        original_email.replied_at = datetime.now(UTC)
+        original_email.reply_text = reply_text or reply_html
+
+        await db.execute(
+            original_email.__class__.__table__.update()
+            .where(original_email.__class__.id == original_email.id)
+            .values(
+                replied=True,
+                replied_at=datetime.now(UTC),
+                reply_text=reply_text or reply_html,
+            )
+        )
+
+        # Get and update lead status
+        lead = await lead_repo.get(str(original_email.lead_id))
+        if lead:
+            # Only transition if not already in a later stage
+            valid_for_transition = [
+                LeadStatus.OUTREACH_SENT.value,
+                LeadStatus.QUALIFIED.value,
+                LeadStatus.SCORED.value,
+            ]
+            if lead.status in valid_for_transition:
+                lead.status = LeadStatus.REPLY_RECEIVED.value
+                lead.status_changed_at = datetime.now(UTC)
+                await lead_repo.update(lead)
+
+                # Create event
+                event = create_event(
+                    event_type=EventType.REPLY_RECEIVED,
+                    lead_id=str(lead.id),
+                    data={
+                        "email_id": str(original_email.id),
+                        "from_email": sender_email,
+                        "subject": subject,
+                        "reply_preview": (reply_text or reply_html)[:200],
+                    },
+                )
+                logger.info(
+                    f"[Resend Inbound] Lead updated to REPLY_RECEIVED | "
+                    f"lead_id={lead.id} | email_id={original_email.id}"
+                )
+
+            # Trigger reply analysis
+            try:
+                from workers.analysis_tasks import analyze_reply
+
+                analyze_reply.delay(
+                    email_id=str(original_email.id),
+                    lead_id=str(original_email.lead_id),
+                    reply_text=reply_text or reply_html,
+                )
+            except Exception as e:
+                logger.warning(f"[Resend Inbound] Failed to trigger analyze_reply: {e}")
+
+        await db.commit()
+
+        return {
+            "status": "processed",
+            "email_id": str(original_email.id),
+            "lead_id": str(original_email.lead_id),
+            "matched_by": "in_reply_to" if payload.in_reply_to else "subject",
+        }
 
 
 @router.get("/tracking/open/{email_id}")

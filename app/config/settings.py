@@ -48,6 +48,10 @@ class Settings(BaseSettings):
     smtp_password: SecretStr | None = Field(default=None)
     smtp_from_email: str = Field(default="outreach@otclick.ru")
 
+    # Resend (for inbound webhooks)
+    resend_api_key: SecretStr | None = Field(default=None)
+    resend_webhook_url: str = Field(default="https://176.126.166.94:8443/api/v1/webhooks/resend/inbound")
+
     # Rate Limits
     max_emails_per_sender_per_day: int = Field(default=50)
     max_emails_per_domain_per_day: int = Field(default=5)

@@ -18,6 +18,16 @@ router = APIRouter(prefix="/emails", tags=["emails"])
 
 
 # Request/Response models
+class ThreadMessage(BaseModel):
+    """A message in the email thread."""
+
+    id: str
+    direction: str  # "outbound" or "inbound"
+    subject: str
+    body: str
+    sent_at: datetime | None = None
+
+
 class EmailResponse(BaseModel):
     """Email response model."""
 
@@ -35,6 +45,8 @@ class EmailResponse(BaseModel):
     opened_at: datetime | None = None
     clicked_at: datetime | None = None
     replied_at: datetime | None = None
+    reply_text: str | None = None
+    thread: list[ThreadMessage] | None = None
 
 
 class EmailListResponse(BaseModel):
@@ -179,6 +191,26 @@ async def list_emails(
             lead = await lead_repo.get(str(email.lead_id)) if email.lead_id else None
             company_name = lead.company_name if lead else None
 
+            # Build thread if reply exists
+            thread = None
+            if email.replied and email.reply_text:
+                thread = [
+                    ThreadMessage(
+                        id=f"{email.id}-out",
+                        direction="outbound",
+                        subject=email.subject,
+                        body=email.body,
+                        sent_at=email.sent_at,
+                    ),
+                    ThreadMessage(
+                        id=f"{email.id}-in",
+                        direction="inbound",
+                        subject=f"Re: {email.subject}",
+                        body=email.reply_text,
+                        sent_at=email.replied_at,
+                    ),
+                ]
+
             items.append(
                 EmailResponse(
                     id=str(email.id),
@@ -195,6 +227,8 @@ async def list_emails(
                     opened_at=email.opened_at,
                     clicked_at=getattr(email, 'clicked_at', None),
                     replied_at=email.replied_at,
+                    reply_text=email.reply_text,
+                    thread=thread,
                 )
             )
 
@@ -278,6 +312,26 @@ async def get_email(email_id: str) -> EmailResponse:
         lead = await lead_repo.get(str(email.lead_id)) if email.lead_id else None
         company_name = lead.company_name if lead else None
 
+        # Build thread if reply exists
+        thread = None
+        if email.replied and email.reply_text:
+            thread = [
+                ThreadMessage(
+                    id=f"{email.id}-out",
+                    direction="outbound",
+                    subject=email.subject,
+                    body=email.body,
+                    sent_at=email.sent_at,
+                ),
+                ThreadMessage(
+                    id=f"{email.id}-in",
+                    direction="inbound",
+                    subject=f"Re: {email.subject}",
+                    body=email.reply_text,
+                    sent_at=email.replied_at,
+                ),
+            ]
+
         return EmailResponse(
             id=str(email.id),
             lead_id=str(email.lead_id),
@@ -293,6 +347,8 @@ async def get_email(email_id: str) -> EmailResponse:
             opened_at=email.opened_at,
             clicked_at=getattr(email, 'clicked_at', None),
             replied_at=email.replied_at,
+            reply_text=email.reply_text,
+            thread=thread,
         )
 
 
