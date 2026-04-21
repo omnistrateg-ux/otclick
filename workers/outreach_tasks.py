@@ -177,11 +177,9 @@ def start_outreach(
                 }
 
     try:
-        return asyncio.get_event_loop().run_until_complete(_run())
+        return asyncio.run(_run())
     except Exception as exc:
-        asyncio.get_event_loop().run_until_complete(
-            _trace_error(lead_id, run_id, step_name, exc)
-        )
+        asyncio.run(_trace_error(lead_id, run_id, step_name, exc))
         raise self.retry(exc=exc)
 
 
@@ -380,7 +378,7 @@ def send_followup(
                 }
 
     try:
-        return asyncio.get_event_loop().run_until_complete(_run())
+        return asyncio.run(_run())
     except Exception as exc:
         _log_task_failure("send_followup", lead_id, exc, run_id)
         raise self.retry(exc=exc)
@@ -498,7 +496,7 @@ def handle_qualification_result(
                     }
 
     try:
-        return asyncio.get_event_loop().run_until_complete(_run())
+        return asyncio.run(_run())
     except Exception as exc:
         _log_task_failure("handle_qualification_result", lead_id, exc, run_id)
         raise self.retry(exc=exc)
@@ -608,7 +606,7 @@ def create_handoff(
                 return {"success": False, "error": result.error}
 
     try:
-        return asyncio.get_event_loop().run_until_complete(_run())
+        return asyncio.run(_run())
     except Exception as exc:
         _log_task_failure("create_handoff", lead_id, exc, run_id)
         raise self.retry(exc=exc)
@@ -665,7 +663,7 @@ def notify_manager(
                 "notification_sent": True,
             }
 
-    return asyncio.get_event_loop().run_until_complete(_run())
+    return asyncio.run(_run())
 
 
 @shared_task(
@@ -737,7 +735,7 @@ def pause_outreach(
                 }
 
     try:
-        return asyncio.get_event_loop().run_until_complete(_run())
+        return asyncio.run(_run())
     except Exception as exc:
         _log_task_failure("pause_outreach", lead_id, exc, run_id)
         raise self.retry(exc=exc)

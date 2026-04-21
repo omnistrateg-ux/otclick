@@ -269,16 +269,33 @@ async def update_lead(
         if not lead:
             raise HTTPException(404, f"Lead {lead_id} not found")
 
-        # Update fields
+        # Update status through orchestrator (validates transitions)
         if request.status:
             try:
-                lead.status = LeadStatus(request.status)
+                target_status = LeadStatus(request.status)
             except ValueError:
                 raise HTTPException(400, f"Invalid status: {request.status}")
+
+            orchestrator = LeadOrchestrator()
+            if not orchestrator.can_transition(lead, target_status):
+                valid = orchestrator.get_valid_transitions(lead)
+                valid_names = [s.value for s in valid]
+                raise HTTPException(
+                    400,
+                    f"Invalid transition from {lead.status.value} to {target_status.value}. "
+                    f"Valid transitions: {valid_names}",
+                )
+
+            lead, _event = orchestrator.transition(
+                lead,
+                target_status,
+                actor="api",
+                reason="Manual status update via API",
+            )
+
         # Note: score and segment are stored in related tables, not on lead
         # TODO: implement score/segment updates via related repos
 
-        lead.updated_at = datetime.now(UTC)
         await lead_repo.update(lead)
 
         return LeadResponse(
@@ -860,10 +877,15 @@ async def send_campaign(request: SendCampaignRequest) -> SendCampaignResponse:
                         data = resp.json()
                         message_id = data.get("id")
 
-                        # Update lead status
-                        lead.status = LeadStatus.OUTREACH_SENT
-                        lead.updated_at = datetime.now(UTC)
-                        await lead_repo.update(lead)
+                        # Update lead status through orchestrator
+                        orchestrator = LeadOrchestrator()
+                        if orchestrator.can_transition(lead, LeadStatus.OUTREACH_SENT):
+                            lead, _event = orchestrator.start_outreach(
+                                lead,
+                                campaign_id=request.campaign_id,
+                                actor="api_send_emails",
+                            )
+                            await lead_repo.update(lead)
 
                         results.append(SendResult(
                             lead_id=str(lead.id),

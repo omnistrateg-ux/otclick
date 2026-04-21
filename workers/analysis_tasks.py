@@ -155,7 +155,7 @@ def analyze_reply(
                 return {"success": False, "error": result.error}
 
     try:
-        return asyncio.get_event_loop().run_until_complete(_run())
+        return asyncio.run(_run())
     except Exception as exc:
         _log_task_failure("analyze_reply", email_id, exc, run_id)
         raise self.retry(exc=exc)
@@ -262,7 +262,7 @@ def qualify_lead(
                 return {"success": False, "error": result.error}
 
     try:
-        return asyncio.get_event_loop().run_until_complete(_run())
+        return asyncio.run(_run())
     except Exception as exc:
         _log_task_failure("qualify_lead", lead_id, exc, run_id)
         raise self.retry(exc=exc)
@@ -338,7 +338,7 @@ def track_email_delivery(
             }
 
     try:
-        return asyncio.get_event_loop().run_until_complete(_run())
+        return asyncio.run(_run())
     except Exception as exc:
         _log_task_failure("track_email_delivery", email_id, exc)
         raise self.retry(exc=exc)
@@ -404,7 +404,7 @@ def track_email_open(
             }
 
     try:
-        return asyncio.get_event_loop().run_until_complete(_run())
+        return asyncio.run(_run())
     except Exception as exc:
         _log_task_failure("track_email_open", email_id, exc)
         raise self.retry(exc=exc)
@@ -474,7 +474,7 @@ def track_email_click(
             }
 
     try:
-        return asyncio.get_event_loop().run_until_complete(_run())
+        return asyncio.run(_run())
     except Exception as exc:
         _log_task_failure("track_email_click", email_id, exc)
         raise self.retry(exc=exc)
@@ -574,7 +574,7 @@ def process_bounce(
             }
 
     try:
-        return asyncio.get_event_loop().run_until_complete(_run())
+        return asyncio.run(_run())
     except Exception as exc:
         _log_task_failure("process_bounce", email_id, exc)
         raise self.retry(exc=exc)

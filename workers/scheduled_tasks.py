@@ -136,7 +136,7 @@ def process_pending_followups(self) -> dict[str, Any]:
                 "followups_sent": followups_sent,
             }
 
-    return asyncio.get_event_loop().run_until_complete(_run())
+    return asyncio.run(_run())
 
 
 @shared_task(
@@ -209,7 +209,7 @@ def generate_daily_report(self) -> dict[str, Any]:
 
             return report
 
-    return asyncio.get_event_loop().run_until_complete(_run())
+    return asyncio.run(_run())
 
 
 @shared_task(
@@ -254,7 +254,7 @@ def cleanup_old_data(
                 "leads_archived": 0,
             }
 
-    return asyncio.get_event_loop().run_until_complete(_run())
+    return asyncio.run(_run())
 
 
 @shared_task(
@@ -308,7 +308,7 @@ def health_check(self) -> dict[str, Any]:
 
         return health
 
-    return asyncio.get_event_loop().run_until_complete(_run())
+    return asyncio.run(_run())
 
 
 @shared_task(
@@ -369,7 +369,7 @@ def check_stale_leads(
                 "total_stale": total_stale,
             }
 
-    return asyncio.get_event_loop().run_until_complete(_run())
+    return asyncio.run(_run())
 
 
 @shared_task(
@@ -432,7 +432,7 @@ def update_rate_limits(self) -> dict[str, Any]:
             "pattern": pattern,
         }
 
-    return asyncio.get_event_loop().run_until_complete(_run())
+    return asyncio.run(_run())
 
 
 @shared_task(
@@ -541,4 +541,4 @@ def auto_recover_failed_pipelines(
             "skipped": skipped,
         }
 
-    return asyncio.get_event_loop().run_until_complete(_run())
+    return asyncio.run(_run())

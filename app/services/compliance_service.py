@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config.settings import settings
 from app.models.domain import EmployerContact, EmployerLead
 from app.models.enums import LeadStatus
+from app.orchestrator.engine import LeadOrchestrator
 
 logger = logging.getLogger(__name__)
 
@@ -132,7 +133,7 @@ class ComplianceService:
         lead: EmployerLead,
         days: int | None = None,
         reason: str = "refused",
-    ) -> datetime:
+    ) -> tuple[EmployerLead, datetime]:
         """Set cooldown period for lead.
 
         Args:
@@ -141,18 +142,31 @@ class ComplianceService:
             reason: Cooldown reason
 
         Returns:
-            Cooldown end datetime
+            Tuple of (updated lead, cooldown end datetime)
         """
         days = days or self.DEFAULT_COOLDOWN_DAYS
         cooldown_until = datetime.now(UTC) + timedelta(days=days)
 
         lead.do_not_contact_until = cooldown_until
-        lead.status = LeadStatus.COOLDOWN
 
-        # TODO: Save to database
+        # Transition through orchestrator if possible
+        orchestrator = LeadOrchestrator()
+        if orchestrator.can_transition(lead, LeadStatus.COOLDOWN):
+            lead, _event = orchestrator.transition(
+                lead,
+                LeadStatus.COOLDOWN,
+                actor="compliance_service",
+                reason=reason,
+                metadata={"cooldown_until": cooldown_until.isoformat(), "days": days},
+            )
+        else:
+            logger.warning(
+                f"Cannot transition lead {lead.id} from {lead.status.value} to COOLDOWN. "
+                f"Setting do_not_contact_until only."
+            )
 
         logger.info(f"Set cooldown for lead {lead.id} until {cooldown_until}, reason: {reason}")
-        return cooldown_until
+        return lead, cooldown_until
 
     # ==================
     # Rate limiting

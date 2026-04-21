@@ -102,7 +102,7 @@ def discover_employers(
             }
 
     try:
-        return asyncio.get_event_loop().run_until_complete(_run())
+        return asyncio.run(_run())
     except Exception as exc:
         logger.exception(f"discover_employers failed: {exc}")
         raise self.retry(exc=exc)
@@ -218,11 +218,9 @@ def enrich_lead(
                 }
 
     try:
-        return asyncio.get_event_loop().run_until_complete(_run())
+        return asyncio.run(_run())
     except Exception as exc:
-        asyncio.get_event_loop().run_until_complete(
-            _trace_error(lead_id, run_id, step_name, exc)
-        )
+        asyncio.run(_trace_error(lead_id, run_id, step_name, exc))
         raise self.retry(exc=exc)
 
 
@@ -342,11 +340,9 @@ def score_lead(
                 }
 
     try:
-        return asyncio.get_event_loop().run_until_complete(_run())
+        return asyncio.run(_run())
     except Exception as exc:
-        asyncio.get_event_loop().run_until_complete(
-            _trace_error(lead_id, run_id, step_name, exc)
-        )
+        asyncio.run(_trace_error(lead_id, run_id, step_name, exc))
         raise self.retry(exc=exc)
 
 
@@ -465,11 +461,9 @@ def qualify_lead_task(
                 }
 
     try:
-        return asyncio.get_event_loop().run_until_complete(_run())
+        return asyncio.run(_run())
     except Exception as exc:
-        asyncio.get_event_loop().run_until_complete(
-            _trace_error(lead_id, run_id, step_name, exc)
-        )
+        asyncio.run(_trace_error(lead_id, run_id, step_name, exc))
         raise self.retry(exc=exc)
 
 
