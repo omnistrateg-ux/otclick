@@ -2,6 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+import { useEffect, useState } from "react"
 import { cn } from "@/lib/utils"
 import {
   LayoutDashboard,
@@ -15,20 +16,59 @@ import {
   Upload,
   FlaskConical,
 } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
+
+interface NotificationCounts {
+  unread_replies: number
+  new_bounces: number
+  pending_handoffs: number
+  total_unread: number
+}
 
 const navigation = [
-  { name: "Дашборд", href: "/", icon: LayoutDashboard },
-  { name: "Лиды", href: "/leads", icon: Users },
-  { name: "Кампании", href: "/campaigns", icon: Mail },
-  { name: "Письма", href: "/emails", icon: Send },
-  { name: "Тест письма", href: "/test-email", icon: FlaskConical },
-  { name: "Импорт", href: "/import", icon: Upload },
-  { name: "Аналитика", href: "/analytics", icon: BarChart3 },
-  { name: "Тёплые лиды", href: "/handoffs", icon: UserCheck },
+  { name: "Дашборд", href: "/", icon: LayoutDashboard, badge: null },
+  { name: "Лиды", href: "/leads", icon: Users, badge: null },
+  { name: "Кампании", href: "/campaigns", icon: Mail, badge: null },
+  { name: "Письма", href: "/emails", icon: Send, badge: "emails" },
+  { name: "Тест письма", href: "/test-email", icon: FlaskConical, badge: null },
+  { name: "Импорт", href: "/import", icon: Upload, badge: null },
+  { name: "Аналитика", href: "/analytics", icon: BarChart3, badge: null },
+  { name: "Тёплые лиды", href: "/handoffs", icon: UserCheck, badge: "handoffs" },
 ]
 
 export function Sidebar() {
   const pathname = usePathname()
+  const [counts, setCounts] = useState<NotificationCounts | null>(null)
+
+  useEffect(() => {
+    async function fetchCounts() {
+      try {
+        const res = await fetch("/api/v1/emails/notifications/counts")
+        if (res.ok) {
+          const data = await res.json()
+          setCounts(data)
+        }
+      } catch (e) {
+        console.error("Failed to fetch notification counts:", e)
+      }
+    }
+
+    fetchCounts()
+    // Refresh every 30 seconds
+    const interval = setInterval(fetchCounts, 30000)
+    return () => clearInterval(interval)
+  }, [])
+
+  const getBadgeCount = (badgeType: string | null): number => {
+    if (!counts || !badgeType) return 0
+    if (badgeType === "emails") {
+      return counts.unread_replies + counts.new_bounces
+    }
+    if (badgeType === "handoffs") {
+      return counts.pending_handoffs
+    }
+    return 0
+  }
 
   return (
     <aside className="fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-zinc-800 bg-zinc-950">
@@ -49,6 +89,7 @@ export function Sidebar() {
           const isActive =
             pathname === item.href ||
             (item.href !== "/" && pathname.startsWith(item.href))
+          const badgeCount = getBadgeCount(item.badge)
 
           return (
             <Link
@@ -70,7 +111,15 @@ export function Sidebar() {
                 )}
               />
               {item.name}
-              {isActive && (
+              {badgeCount > 0 && (
+                <Badge
+                  variant="destructive"
+                  className="ml-auto h-5 min-w-5 px-1.5 text-xs font-semibold bg-orange-500 hover:bg-orange-500"
+                >
+                  {badgeCount > 99 ? "99+" : badgeCount}
+                </Badge>
+              )}
+              {isActive && badgeCount === 0 && (
                 <div className="ml-auto h-1.5 w-1.5 rounded-full bg-indigo-400" />
               )}
             </Link>

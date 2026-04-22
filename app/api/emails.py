@@ -74,6 +74,15 @@ class EmailStatsResponse(BaseModel):
     bounce_rate: float
 
 
+class NotificationCountsResponse(BaseModel):
+    """Notification counts for badges."""
+
+    unread_replies: int = 0  # Replies not yet viewed/processed
+    new_bounces: int = 0  # Bounces in last 24h
+    pending_handoffs: int = 0  # Handoffs not yet actioned
+    total_unread: int = 0  # Total for main badge
+
+
 class SendEmailRequest(BaseModel):
     """Send email request."""
 
@@ -114,8 +123,14 @@ class TestEmailResponse(BaseModel):
 
     success: bool
     message_id: str | None = None
+    email_db_id: str | None = None  # ID in email_messages table
     sent_at: datetime | None = None
     error: str | None = None
+
+
+# Test email constants
+TEST_LEAD_COMPANY = "__TEST_EMAILS__"
+TEST_CONTACT_NAME = "Test Recipient"
 
 
 def _get_email_status(email) -> str:
@@ -277,6 +292,68 @@ async def get_email_stats(
             click_rate=perf.click_rate,
             reply_rate=perf.reply_rate,
             bounce_rate=perf.bounce_rate,
+        )
+
+
+@router.get("/notifications/counts", response_model=NotificationCountsResponse)
+async def get_notification_counts() -> NotificationCountsResponse:
+    """Get notification counts for dashboard badges.
+
+    Returns counts of:
+    - Unread replies (replies received in last 24h)
+    - New bounces (bounces in last 24h)
+    - Pending handoffs (from handoffs API)
+
+    Returns:
+        Notification counts
+    """
+    from datetime import timedelta
+
+    from sqlalchemy import func, select
+
+    from app.models.db import EmailMessageDB, ManagerHandoffDB
+
+    async with async_session_factory() as db:
+        now = datetime.now(UTC)
+        last_24h = now - timedelta(hours=24)
+
+        # Count replies in last 24h
+        replies_result = await db.execute(
+            select(func.count(EmailMessageDB.id)).where(
+                EmailMessageDB.replied == True,
+                EmailMessageDB.replied_at >= last_24h,
+            )
+        )
+        unread_replies = replies_result.scalar_one() or 0
+
+        # Count bounces in last 24h
+        bounces_result = await db.execute(
+            select(func.count(EmailMessageDB.id)).where(
+                EmailMessageDB.bounced == True,
+                EmailMessageDB.sent_at >= last_24h,
+            )
+        )
+        new_bounces = bounces_result.scalar_one() or 0
+
+        # Count pending handoffs
+        try:
+            handoffs_result = await db.execute(
+                select(func.count(ManagerHandoffDB.id)).where(
+                    ManagerHandoffDB.status == "pending",
+                )
+            )
+            pending_handoffs = handoffs_result.scalar_one() or 0
+        except Exception:
+            # ManagerHandoffDB may not exist in all setups
+            pending_handoffs = 0
+
+        total_unread = unread_replies + new_bounces + pending_handoffs
+
+        return NotificationCountsResponse(
+            unread_replies=unread_replies,
+            new_bounces=new_bounces,
+            pending_handoffs=pending_handoffs,
+            total_unread=total_unread,
         )
 
 
@@ -482,20 +559,99 @@ async def preview_email(request: PreviewEmailRequest) -> PreviewEmailResponse:
         )
 
 
+async def _get_or_create_test_entities(db, to_email: str):
+    """Get or create test lead, contact, and sequence for test emails.
+
+    Args:
+        db: Database session
+        to_email: Recipient email
+
+    Returns:
+        Tuple of (lead_id, contact_id, sequence_id)
+    """
+    from uuid import UUID
+    from sqlalchemy import select
+    from app.models.db import EmployerLeadDB, EmployerContactDB, EmailSequenceDB
+
+    # Find or create test lead
+    result = await db.execute(
+        select(EmployerLeadDB).where(EmployerLeadDB.company_name == TEST_LEAD_COMPANY)
+    )
+    lead = result.scalar_one_or_none()
+
+    if not lead:
+        from uuid import uuid4
+        lead = EmployerLeadDB(
+            id=uuid4(),
+            company_name=TEST_LEAD_COMPANY,
+            source="test",
+            status="lead_found",
+        )
+        db.add(lead)
+        await db.flush()
+
+    # Find or create contact for this email
+    result = await db.execute(
+        select(EmployerContactDB).where(
+            EmployerContactDB.lead_id == lead.id,
+            EmployerContactDB.email == to_email,
+        )
+    )
+    contact = result.scalar_one_or_none()
+
+    if not contact:
+        from uuid import uuid4
+        contact = EmployerContactDB(
+            id=uuid4(),
+            lead_id=lead.id,
+            full_name=TEST_CONTACT_NAME,
+            email=to_email,
+            role="other",
+        )
+        db.add(contact)
+        await db.flush()
+
+    # Find or create sequence
+    result = await db.execute(
+        select(EmailSequenceDB).where(
+            EmailSequenceDB.lead_id == lead.id,
+            EmailSequenceDB.contact_id == contact.id,
+            EmailSequenceDB.is_active == True,
+        )
+    )
+    sequence = result.scalar_one_or_none()
+
+    if not sequence:
+        from uuid import uuid4
+        sequence = EmailSequenceDB(
+            id=uuid4(),
+            lead_id=lead.id,
+            contact_id=contact.id,
+            current_step=0,
+            is_active=True,
+        )
+        db.add(sequence)
+        await db.flush()
+
+    return lead.id, contact.id, sequence.id
+
+
 @router.post("/test", response_model=TestEmailResponse)
 async def send_test_email(request: TestEmailRequest) -> TestEmailResponse:
     """Send a test email manually.
 
     This endpoint allows sending test emails without requiring a lead.
     Use this to test email delivery to yourself before campaigns.
+    The email is saved to email_messages table for tracking and webhook matching.
 
     Args:
         request: Test email request with recipient, subject, and body
 
     Returns:
-        Result of the send attempt
+        Result of the send attempt with DB record ID
     """
     from app.email.delivery import EmailDelivery
+    from app.models.db import EmailMessageDB
 
     delivery = EmailDelivery(from_name=request.from_name)
 
@@ -511,11 +667,51 @@ async def send_test_email(request: TestEmailRequest) -> TestEmailResponse:
 
         message_id = msg["Message-ID"]
         delivery._send_smtp(msg, request.to_email)
+        sent_at = datetime.now(UTC)
+
+        # Save to database for webhook matching
+        email_db_id = None
+        try:
+            async with async_session_factory() as db:
+                lead_id, contact_id, sequence_id = await _get_or_create_test_entities(
+                    db, request.to_email
+                )
+
+                # Get next step number
+                from sqlalchemy import select, func
+                result = await db.execute(
+                    select(func.coalesce(func.max(EmailMessageDB.step_number), 0))
+                    .where(EmailMessageDB.sequence_id == sequence_id)
+                )
+                max_step = result.scalar_one()
+
+                email_msg = EmailMessageDB(
+                    sequence_id=sequence_id,
+                    lead_id=lead_id,
+                    contact_id=contact_id,
+                    email_type="test",
+                    subject=request.subject,
+                    body=request.body,
+                    step_number=max_step + 1,
+                    sent_at=sent_at,
+                    message_id_header=message_id,
+                    delivered=True,
+                )
+                db.add(email_msg)
+                await db.commit()
+                email_db_id = str(email_msg.id)
+        except Exception as db_error:
+            # Log but don't fail - email was sent successfully
+            import logging
+            logging.getLogger(__name__).warning(
+                f"Failed to save test email to DB: {db_error}"
+            )
 
         return TestEmailResponse(
             success=True,
             message_id=message_id,
-            sent_at=datetime.now(UTC),
+            email_db_id=email_db_id,
+            sent_at=sent_at,
         )
 
     except Exception as e:

@@ -389,7 +389,8 @@ async def handle_resend_inbound(
     """Handle Resend inbound email webhook.
 
     When a recipient replies to our email, Resend sends the reply here.
-    We match it to the original email and update the lead status.
+    We match it to the original email, update lead status, call Sales Agent,
+    and send an auto-reply via Resend.
 
     Webhook URL: https://176.126.166.94:8443/api/v1/webhooks/resend/inbound
 
@@ -397,11 +398,19 @@ async def handle_resend_inbound(
         request: Raw request with JSON body
 
     Returns:
-        Processing result
+        Processing result including auto-reply info
     """
+    from uuid import UUID
+
+    from app.agents.sales_agent import SalesAgent
     from app.core.state_machine import LeadStatus
     from app.events.definitions import EventType
     from app.events.helpers import create_event
+    from app.llm.router import LLMRouter
+    from app.models.db import EmailMessageDB
+    from app.models.domain import AgentTask, EmployerLead
+    from app.services.resend_service import resend_service
+    from app.storage.repositories.contact_repo import ContactRepository
     from app.storage.repositories.email_repo import EmailRepository
     from app.storage.repositories.lead_repo import LeadRepository
 
@@ -426,6 +435,7 @@ async def handle_resend_inbound(
     async with async_session_factory() as db:
         email_repo = EmailRepository(db)
         lead_repo = LeadRepository(db)
+        contact_repo = ContactRepository(db)
 
         original_email = None
 
@@ -478,8 +488,12 @@ async def handle_resend_inbound(
         original_email.reply_text = reply_text or reply_html
         await email_repo.update(original_email)
 
-        # Get and update lead status
+        # Get lead and contact
         lead = await lead_repo.get(str(original_email.lead_id))
+        contact = await contact_repo.get_by_id(original_email.contact_id) if original_email.contact_id else None
+
+        auto_reply_result = None
+
         if lead:
             # Only transition if not already in a later stage
             valid_for_transition = [
@@ -508,7 +522,139 @@ async def handle_resend_inbound(
                     f"lead_id={lead.id} | email_id={original_email.id}"
                 )
 
-            # Trigger reply analysis
+            # === AUTO-REPLY VIA SALES AGENT ===
+            try:
+                # Skip auto-reply for test leads
+                if lead.company_name != "__TEST_EMAILS__":
+                    # Build previous emails for context
+                    previous_emails = []
+                    if original_email.subject and original_email.body:
+                        previous_emails.append({
+                            "subject": original_email.subject,
+                            "body": original_email.body,
+                        })
+
+                    # Get contact name
+                    contact_name = contact.full_name if contact else sender_email.split("@")[0]
+
+                    # Create Sales Agent
+                    llm_router = LLMRouter()
+                    sales_agent = SalesAgent(llm_router=llm_router, db=db)
+
+                    # Build lead domain object
+                    lead_domain = EmployerLead(
+                        id=UUID(str(lead.id)),
+                        company_name=lead.company_name,
+                        source=lead.source,
+                        city=lead.city,
+                    )
+
+                    # Build task
+                    task = AgentTask(
+                        lead_id=lead_domain.id,
+                        agent_name="sales",
+                        task_type="generate_response",
+                        input_data={
+                            "lead": lead_domain.model_dump(mode="json"),
+                            "contact_name": contact_name,
+                            "reply_text": reply_text or reply_html,
+                            "previous_emails": previous_emails,
+                            "emails_sent_count": 1,
+                            "industry": "other",
+                            "city": lead.city,
+                        },
+                    )
+
+                    # Execute Sales Agent
+                    agent_result = await sales_agent.execute(task)
+
+                    if agent_result.success and agent_result.data:
+                        email_data = agent_result.data.get("email", {})
+                        response_subject = email_data.get("subject", f"Re: {subject}")
+                        response_body = email_data.get("body", "")
+
+                        if response_body:
+                            # Send auto-reply via Resend
+                            resend_result = await resend_service.send_email(
+                                to_email=sender_email,
+                                subject=response_subject,
+                                body=response_body,
+                                in_reply_to=payload.message_id,
+                                references=[payload.message_id] if payload.message_id else None,
+                            )
+
+                            if resend_result.success:
+                                logger.info(
+                                    f"[Resend Inbound] Auto-reply sent | "
+                                    f"to={sender_email} | message_id={resend_result.message_id}"
+                                )
+
+                                # Save auto-reply to DB
+                                from sqlalchemy import select, func
+                                result = await db.execute(
+                                    select(func.coalesce(func.max(EmailMessageDB.step_number), 0))
+                                    .where(EmailMessageDB.sequence_id == original_email.sequence_id)
+                                )
+                                max_step = result.scalar_one()
+
+                                auto_reply_msg = EmailMessageDB(
+                                    sequence_id=original_email.sequence_id,
+                                    lead_id=original_email.lead_id,
+                                    contact_id=original_email.contact_id,
+                                    email_type="auto_reply",
+                                    subject=response_subject,
+                                    body=response_body,
+                                    step_number=max_step + 1,
+                                    sent_at=resend_result.sent_at,
+                                    message_id_header=resend_result.message_id,
+                                    delivered=True,
+                                    generation_model="sales_agent",
+                                )
+                                db.add(auto_reply_msg)
+
+                                auto_reply_result = {
+                                    "sent": True,
+                                    "message_id": resend_result.message_id,
+                                    "email_db_id": str(auto_reply_msg.id),
+                                    "strategy": agent_result.data.get("strategy", {}),
+                                }
+
+                                # Create event for auto-reply
+                                create_event(
+                                    event_type=EventType.EMAIL_SENT,
+                                    lead_id=str(lead.id),
+                                    data={
+                                        "email_id": str(auto_reply_msg.id),
+                                        "email_type": "auto_reply",
+                                        "to_email": sender_email,
+                                        "subject": response_subject,
+                                    },
+                                )
+                            else:
+                                logger.error(
+                                    f"[Resend Inbound] Failed to send auto-reply: {resend_result.error}"
+                                )
+                                auto_reply_result = {
+                                    "sent": False,
+                                    "error": resend_result.error,
+                                }
+                    else:
+                        logger.warning(
+                            f"[Resend Inbound] Sales Agent failed: {agent_result.error}"
+                        )
+                        auto_reply_result = {
+                            "sent": False,
+                            "error": f"Sales Agent: {agent_result.error}",
+                        }
+
+            except Exception as e:
+                logger.exception(f"[Resend Inbound] Auto-reply error: {e}")
+                auto_reply_result = {
+                    "sent": False,
+                    "error": str(e),
+                }
+
+            # Trigger background reply analysis
             try:
                 from workers.analysis_tasks import analyze_reply
 
@@ -522,12 +668,17 @@ async def handle_resend_inbound(
 
         await db.commit()
 
-        return {
+        result = {
             "status": "processed",
             "email_id": str(original_email.id),
             "lead_id": str(original_email.lead_id),
             "matched_by": "in_reply_to" if payload.in_reply_to else "subject",
         }
+
+        if auto_reply_result:
+            result["auto_reply"] = auto_reply_result
+
+        return result
 
 
 @router.get("/tracking/open/{email_id}")
