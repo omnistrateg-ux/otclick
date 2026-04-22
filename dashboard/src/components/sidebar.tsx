@@ -4,6 +4,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useEffect, useState } from "react"
 import { cn } from "@/lib/utils"
+import { api, NotificationCounts } from "@/lib/api"
 import {
   LayoutDashboard,
   Users,
@@ -17,13 +18,6 @@ import {
   FlaskConical,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
-
-interface NotificationCounts {
-  unread_replies: number
-  new_bounces: number
-  pending_handoffs: number
-  total_unread: number
-}
 
 const navigation = [
   { name: "Дашборд", href: "/", icon: LayoutDashboard, badge: null },
@@ -43,11 +37,8 @@ export function Sidebar() {
   useEffect(() => {
     async function fetchCounts() {
       try {
-        const res = await fetch("/api/v1/emails/notifications/counts")
-        if (res.ok) {
-          const data = await res.json()
-          setCounts(data)
-        }
+        const data = await api.getNotificationCounts()
+        setCounts(data)
       } catch (e) {
         console.error("Failed to fetch notification counts:", e)
       }

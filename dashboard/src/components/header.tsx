@@ -5,13 +5,7 @@ import Link from "next/link"
 import { Bell, Search, User, Mail, AlertTriangle, UserCheck } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-
-interface NotificationCounts {
-  unread_replies: number
-  new_bounces: number
-  pending_handoffs: number
-  total_unread: number
-}
+import { api, NotificationCounts } from "@/lib/api"
 
 interface HeaderProps {
   title: string
@@ -26,11 +20,8 @@ export function Header({ title, description }: HeaderProps) {
   useEffect(() => {
     async function fetchCounts() {
       try {
-        const res = await fetch("/api/v1/emails/notifications/counts")
-        if (res.ok) {
-          const data = await res.json()
-          setCounts(data)
-        }
+        const data = await api.getNotificationCounts()
+        setCounts(data)
       } catch (e) {
         console.error("Failed to fetch notification counts:", e)
       }

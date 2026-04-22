@@ -343,4 +343,15 @@ export const api = {
       method: "POST",
       body: JSON.stringify(data),
     }),
+
+  // Notification counts for badges
+  getNotificationCounts: () => fetcher<NotificationCounts>("/emails/notifications/counts"),
+}
+
+// Notification counts interface
+export interface NotificationCounts {
+  unread_replies: number
+  new_bounces: number
+  pending_handoffs: number
+  total_unread: number
 }
