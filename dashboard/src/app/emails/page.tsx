@@ -46,6 +46,7 @@ import {
   ArrowUpRight,
   ArrowDownLeft,
   X,
+  Plus,
 } from "lucide-react"
 
 // Strip HTML tags for plain text preview
@@ -114,111 +115,120 @@ export default function EmailsPage() {
         <div className="absolute inset-0 bg-gradient-to-br from-indigo-600/10 via-transparent to-orange-500/5" />
         <div className="absolute top-0 right-1/4 w-96 h-96 bg-indigo-600/5 rounded-full blur-3xl" />
 
-        <div className="relative px-6 py-6">
+        <div className="relative px-4 sm:px-6 py-6">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h1 className="text-3xl font-bold text-zinc-100">Письма</h1>
-              <p className="text-zinc-400 mt-1">
+              <h1 className="text-2xl sm:text-3xl font-bold text-zinc-100">Письма</h1>
+              <p className="text-zinc-400 mt-1 text-sm sm:text-base">
                 История email-коммуникаций
               </p>
             </div>
+            {/* Desktop: Test Email Button */}
+            <Link href="/test-email" className="hidden sm:block">
+              <Button className="gap-2 bg-indigo-600 hover:bg-indigo-700">
+                <Send className="h-4 w-4" />
+                Тестовое письмо
+              </Button>
+            </Link>
           </div>
 
           {/* Stats */}
-          <div className="grid gap-4 md:grid-cols-4 mb-6">
-            <div className="p-4 rounded-xl bg-gradient-to-br from-indigo-600/20 to-indigo-600/5 border border-indigo-500/20">
+          <div className="grid gap-3 sm:gap-4 grid-cols-2 md:grid-cols-4 mb-6">
+            <div className="p-3 sm:p-4 rounded-xl bg-gradient-to-br from-indigo-600/20 to-indigo-600/5 border border-indigo-500/20">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-zinc-400">Всего писем</p>
-                  <p className="text-2xl font-bold text-indigo-400 mt-1">
+                  <p className="text-xs sm:text-sm text-zinc-400">Всего писем</p>
+                  <p className="text-xl sm:text-2xl font-bold text-indigo-400 mt-1">
                     {formatNumber(stats.total)}
                   </p>
                 </div>
-                <Mail className="h-8 w-8 text-indigo-400/50" />
+                <Mail className="h-6 w-6 sm:h-8 sm:w-8 text-indigo-400/50" />
               </div>
             </div>
 
-            <div className="p-4 rounded-xl bg-gradient-to-br from-blue-600/20 to-blue-600/5 border border-blue-500/20">
+            <div className="p-3 sm:p-4 rounded-xl bg-gradient-to-br from-blue-600/20 to-blue-600/5 border border-blue-500/20">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-zinc-400">Отправлено</p>
-                  <p className="text-2xl font-bold text-blue-400 mt-1">
+                  <p className="text-xs sm:text-sm text-zinc-400">Отправлено</p>
+                  <p className="text-xl sm:text-2xl font-bold text-blue-400 mt-1">
                     {formatNumber(stats.sent)}
                   </p>
                 </div>
-                <Send className="h-8 w-8 text-blue-400/50" />
+                <Send className="h-6 w-6 sm:h-8 sm:w-8 text-blue-400/50" />
               </div>
             </div>
 
-            <div className="p-4 rounded-xl bg-gradient-to-br from-emerald-600/20 to-emerald-600/5 border border-emerald-500/20">
+            <div className="p-3 sm:p-4 rounded-xl bg-gradient-to-br from-emerald-600/20 to-emerald-600/5 border border-emerald-500/20">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-zinc-400">Открыто</p>
-                  <p className="text-2xl font-bold text-emerald-400 mt-1">
+                  <p className="text-xs sm:text-sm text-zinc-400">Открыто</p>
+                  <p className="text-xl sm:text-2xl font-bold text-emerald-400 mt-1">
                     {formatNumber(stats.opened)}
                   </p>
                 </div>
-                <MailOpen className="h-8 w-8 text-emerald-400/50" />
+                <MailOpen className="h-6 w-6 sm:h-8 sm:w-8 text-emerald-400/50" />
               </div>
             </div>
 
-            <div className="p-4 rounded-xl bg-gradient-to-br from-amber-600/20 to-amber-600/5 border border-amber-500/20">
+            <div className="p-3 sm:p-4 rounded-xl bg-gradient-to-br from-amber-600/20 to-amber-600/5 border border-amber-500/20">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-zinc-400">Ответили</p>
-                  <p className="text-2xl font-bold text-amber-400 mt-1">
+                  <p className="text-xs sm:text-sm text-zinc-400">Ответили</p>
+                  <p className="text-xl sm:text-2xl font-bold text-amber-400 mt-1">
                     {formatNumber(stats.replied)}
                   </p>
                 </div>
-                <MessageSquare className="h-8 w-8 text-amber-400/50" />
+                <MessageSquare className="h-6 w-6 sm:h-8 sm:w-8 text-amber-400/50" />
               </div>
             </div>
           </div>
 
           {/* Search & Filters */}
-          <div className="flex flex-wrap gap-3">
-            <div className="relative flex-1 min-w-[240px]">
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
               <Input
-                placeholder="Поиск по компании, контакту или теме..."
+                placeholder="Поиск по компании, контакту..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-9 bg-zinc-900/50 border-zinc-700"
               />
             </div>
 
-            <Select value={status} onValueChange={setStatus}>
-              <SelectTrigger className="w-[180px] bg-zinc-900/50 border-zinc-700">
-                <SelectValue placeholder="Статус" />
-              </SelectTrigger>
-              <SelectContent>
-                {EMAIL_STATUSES.map((s) => (
-                  <SelectItem key={s.value} value={s.value}>
-                    {s.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="flex gap-2">
+              <Select value={status} onValueChange={setStatus}>
+                <SelectTrigger className="w-full sm:w-[180px] bg-zinc-900/50 border-zinc-700">
+                  <SelectValue placeholder="Статус" />
+                </SelectTrigger>
+                <SelectContent>
+                  {EMAIL_STATUSES.map((s) => (
+                    <SelectItem key={s.value} value={s.value}>
+                      {s.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
 
-            {(search || status !== "all") && (
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  setSearch("")
-                  setStatus("all")
-                }}
-                className="gap-2"
-              >
-                <X className="h-4 w-4" />
-                Сбросить
-              </Button>
-            )}
+              {(search || status !== "all") && (
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setSearch("")
+                    setStatus("all")
+                  }}
+                  className="gap-2 shrink-0"
+                >
+                  <X className="h-4 w-4" />
+                  <span className="hidden sm:inline">Сбросить</span>
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       </div>
 
       {/* Content */}
-      <div className="p-6">
+      <div className="p-4 sm:p-6 pb-24 sm:pb-6">
         <Card className="border-zinc-800 bg-zinc-900/50">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -235,7 +245,8 @@ export default function EmailsPage() {
               </div>
             ) : data?.items?.length ? (
               <>
-                <Table>
+                <div className="overflow-x-auto -mx-4 sm:mx-0">
+                <Table className="min-w-[800px] sm:min-w-0">
                   <TableHeader>
                     <TableRow className="border-zinc-800 hover:bg-transparent">
                       <TableHead className="text-zinc-400">Компания</TableHead>
@@ -301,6 +312,7 @@ export default function EmailsPage() {
                     ))}
                   </TableBody>
                 </Table>
+                </div>
 
                 {/* Pagination */}
                 {(data.pages || 1) > 1 && (
@@ -350,9 +362,17 @@ export default function EmailsPage() {
         </Card>
       </div>
 
+      {/* Mobile FAB: Test Email Button */}
+      <Link
+        href="/test-email"
+        className="sm:hidden fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-indigo-600 text-white shadow-lg shadow-indigo-600/30 hover:bg-indigo-700 active:scale-95 transition-all"
+      >
+        <Send className="h-6 w-6" />
+      </Link>
+
       {/* Email Detail Dialog */}
       <Dialog open={!!selectedEmail} onOpenChange={() => setSelectedEmail(null)}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto bg-zinc-900 border-zinc-700">
+        <DialogContent className="max-w-2xl max-h-[90vh] sm:max-h-[80vh] overflow-y-auto bg-zinc-900 border-zinc-700 mx-2 sm:mx-auto rounded-xl">
           {selectedEmail && (
             <>
               <DialogHeader>
@@ -374,7 +394,7 @@ export default function EmailsPage() {
 
               <div className="space-y-6 mt-4">
                 {/* Meta Info */}
-                <div className="grid grid-cols-2 gap-4 p-4 rounded-xl bg-zinc-800/50">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 p-3 sm:p-4 rounded-xl bg-zinc-800/50">
                   <div className="flex items-center gap-3">
                     <Building2 className="h-5 w-5 text-zinc-500" />
                     <div>
