@@ -125,10 +125,12 @@ export interface Email {
   contact_email: string
   subject: string
   body: string
+  email_type: string
   status: "sent" | "delivered" | "opened" | "replied" | "bounced"
   sent_at: string
   opened_at?: string
   replied_at?: string
+  reply_text?: string
   thread?: EmailThread[]
 }
 
@@ -346,6 +348,9 @@ export const api = {
 
   // Notification counts for badges
   getNotificationCounts: () => fetcher<NotificationCounts>("/emails/notifications/counts"),
+
+  // Email statistics
+  getEmailStats: () => fetcher<EmailStats>("/emails/stats"),
 }
 
 // Notification counts interface
@@ -354,4 +359,18 @@ export interface NotificationCounts {
   new_bounces: number
   pending_handoffs: number
   total_unread: number
+}
+
+// Email statistics interface
+export interface EmailStats {
+  total_sent: number
+  total_delivered: number
+  total_opened: number
+  total_clicked: number
+  total_replied: number
+  total_bounced: number
+  open_rate: number
+  click_rate: number
+  reply_rate: number
+  bounce_rate: number
 }

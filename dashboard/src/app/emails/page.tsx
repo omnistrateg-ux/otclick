@@ -46,7 +46,8 @@ import {
   ArrowUpRight,
   ArrowDownLeft,
   X,
-  Plus,
+  FlaskConical,
+  Reply,
 } from "lucide-react"
 
 // Strip HTML tags for plain text preview
@@ -90,22 +91,36 @@ export default function EmailsPage() {
       }),
   })
 
-  const getStatusBadge = (emailStatus: string) => {
+  // Fetch real stats from API
+  const { data: emailStats } = useQuery({
+    queryKey: ["email-stats"],
+    queryFn: () => api.getEmailStats(),
+    staleTime: 30000, // 30 seconds
+  })
+
+  const getStatusBadge = (emailStatus: string, hasReply?: boolean) => {
     const config = statusConfig[emailStatus] || statusConfig.sent
     const Icon = config.icon
     return (
-      <Badge variant="outline" className={`gap-1.5 ${config.color} ${config.bgColor} border-0`}>
-        <Icon className="h-3 w-3" />
-        {config.label}
-      </Badge>
+      <div className="flex items-center gap-1.5">
+        <Badge variant="outline" className={`gap-1.5 ${config.color} ${config.bgColor} border-0`}>
+          <Icon className="h-3 w-3" />
+          {config.label}
+        </Badge>
+        {hasReply && emailStatus !== "replied" && (
+          <Badge variant="outline" className="gap-1 text-amber-400 bg-amber-500/20 border-0 text-xs">
+            <MessageSquare className="h-3 w-3" />
+          </Badge>
+        )}
+      </div>
     )
   }
 
   const stats = {
-    total: data?.total || 0,
-    sent: data?.items?.filter(e => e.status === "sent").length || 0,
-    opened: data?.items?.filter(e => e.status === "opened").length || 0,
-    replied: data?.items?.filter(e => e.status === "replied").length || 0,
+    total: emailStats?.total_sent || data?.total || 0,
+    sent: emailStats?.total_delivered || 0,
+    opened: emailStats?.total_opened || 0,
+    replied: emailStats?.total_replied || 0,
   }
 
   return (
@@ -290,9 +305,23 @@ export default function EmailsPage() {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <span className="font-medium text-zinc-200 truncate block max-w-[200px]">
-                            {email.subject}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-zinc-200 truncate block max-w-[180px]">
+                              {email.subject}
+                            </span>
+                            {email.email_type === "test" && (
+                              <Badge variant="outline" className="gap-1 text-purple-400 bg-purple-500/20 border-0 text-xs shrink-0">
+                                <FlaskConical className="h-3 w-3" />
+                                Тест
+                              </Badge>
+                            )}
+                            {email.email_type === "auto_reply" && (
+                              <Badge variant="outline" className="gap-1 text-cyan-400 bg-cyan-500/20 border-0 text-xs shrink-0">
+                                <Reply className="h-3 w-3" />
+                                Авто
+                              </Badge>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell>
                           <span className="text-zinc-400 truncate block max-w-[200px]">
@@ -300,7 +329,7 @@ export default function EmailsPage() {
                           </span>
                         </TableCell>
                         <TableCell>
-                          {getStatusBadge(email.status)}
+                          {getStatusBadge(email.status, !!email.replied_at)}
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-1.5 text-zinc-500 text-sm">
@@ -388,7 +417,7 @@ export default function EmailsPage() {
                       {selectedEmail.company_name || selectedEmail.contact_email || "—"}
                     </p>
                   </div>
-                  {getStatusBadge(selectedEmail.status)}
+                  {getStatusBadge(selectedEmail.status, !!selectedEmail.replied_at)}
                 </DialogTitle>
               </DialogHeader>
 
