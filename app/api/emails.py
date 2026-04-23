@@ -357,6 +357,109 @@ async def get_notification_counts() -> NotificationCountsResponse:
         )
 
 
+class ThreadResponse(BaseModel):
+    """Email thread response."""
+
+    lead_id: str
+    company_name: str | None = None
+    contact_name: str | None = None
+    contact_email: str | None = None
+    thread: list[ThreadMessage]
+
+
+@router.get("/thread/{lead_id}", response_model=ThreadResponse)
+async def get_email_thread(lead_id: str) -> ThreadResponse:
+    """Get full email thread for a lead.
+
+    Returns all emails (outbound and inbound) for a lead, sorted by time.
+
+    Args:
+        lead_id: Lead ID
+
+    Returns:
+        Thread with all messages
+    """
+    from uuid import UUID
+
+    from sqlalchemy import select
+
+    from app.models.db import EmailMessageDB, EmployerContactDB, EmployerLeadDB
+
+    async with async_session_factory() as db:
+        # Get lead info
+        try:
+            lead_uuid = UUID(lead_id)
+        except ValueError:
+            raise HTTPException(400, f"Invalid lead_id: {lead_id}")
+
+        lead_result = await db.execute(
+            select(EmployerLeadDB).where(EmployerLeadDB.id == lead_uuid)
+        )
+        lead = lead_result.scalar_one_or_none()
+        if not lead:
+            raise HTTPException(404, f"Lead {lead_id} not found")
+
+        # Get all emails for this lead
+        emails_result = await db.execute(
+            select(EmailMessageDB)
+            .where(EmailMessageDB.lead_id == lead_uuid)
+            .order_by(EmailMessageDB.sent_at.asc().nullslast())
+        )
+        emails = list(emails_result.scalars().all())
+
+        # Get contact info from first email
+        contact_name = None
+        contact_email = None
+        if emails and emails[0].contact_id:
+            contact_result = await db.execute(
+                select(EmployerContactDB).where(
+                    EmployerContactDB.id == emails[0].contact_id
+                )
+            )
+            contact = contact_result.scalar_one_or_none()
+            if contact:
+                contact_name = contact.full_name
+                contact_email = contact.email
+
+        # Build thread with both outbound and inbound messages
+        thread: list[ThreadMessage] = []
+        for email in emails:
+            # Add outbound message
+            if email.sent_at:
+                thread.append(
+                    ThreadMessage(
+                        id=f"{email.id}-out",
+                        direction="outbound",
+                        subject=email.subject,
+                        body=email.body,
+                        sent_at=email.sent_at,
+                    )
+                )
+
+            # Add inbound reply if exists
+            if email.replied and email.reply_text:
+                thread.append(
+                    ThreadMessage(
+                        id=f"{email.id}-in",
+                        direction="inbound",
+                        subject=f"Re: {email.subject}",
+                        body=email.reply_text,
+                        sent_at=email.replied_at,
+                    )
+                )
+
+        # Sort by time
+        thread.sort(key=lambda m: m.sent_at or datetime.min.replace(tzinfo=UTC))
+
+        return ThreadResponse(
+            lead_id=lead_id,
+            company_name=lead.company_name,
+            contact_name=contact_name,
+            contact_email=contact_email,
+            thread=thread,
+        )
+
+
 @router.get("/{email_id}", response_model=EmailResponse)
 async def get_email(email_id: str) -> EmailResponse:
     """Get email by ID.

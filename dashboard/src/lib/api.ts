@@ -142,6 +142,14 @@ export interface EmailThread {
   sent_at: string
 }
 
+export interface EmailThreadResponse {
+  lead_id: string
+  company_name: string | null
+  contact_name: string | null
+  contact_email: string | null
+  thread: EmailThread[]
+}
+
 export interface EmailsFilters {
   status?: string
   search?: string
@@ -338,6 +346,8 @@ export const api = {
   },
 
   getEmail: (id: string) => fetcher<Email>(`/emails/${id}`),
+
+  getEmailThread: (leadId: string) => fetcher<EmailThreadResponse>(`/emails/thread/${leadId}`),
 
   // Test email (manual send)
   sendTestEmail: (data: TestEmailRequest) =>

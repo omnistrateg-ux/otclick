@@ -29,7 +29,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Skeleton } from "@/components/ui/skeleton"
-import { api, Email } from "@/lib/api"
+import { api, Email, EmailThreadResponse } from "@/lib/api"
 import { formatDateTime, formatNumber } from "@/lib/utils"
 import {
   Search,
@@ -78,6 +78,7 @@ export default function EmailsPage() {
   const [status, setStatus] = useState("all")
   const [page, setPage] = useState(1)
   const [selectedEmail, setSelectedEmail] = useState<Email | null>(null)
+  const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null)
   const limit = 20
 
   const { data, isLoading } = useQuery({
@@ -97,6 +98,23 @@ export default function EmailsPage() {
     queryFn: () => api.getEmailStats(),
     staleTime: 30000, // 30 seconds
   })
+
+  // Fetch thread when email is selected
+  const { data: threadData, isLoading: threadLoading } = useQuery({
+    queryKey: ["email-thread", selectedLeadId],
+    queryFn: () => api.getEmailThread(selectedLeadId!),
+    enabled: !!selectedLeadId,
+  })
+
+  const handleEmailClick = (email: Email) => {
+    setSelectedEmail(email)
+    setSelectedLeadId(email.lead_id)
+  }
+
+  const handleCloseDialog = () => {
+    setSelectedEmail(null)
+    setSelectedLeadId(null)
+  }
 
   const getStatusBadge = (emailStatus: string, hasReply?: boolean) => {
     const config = statusConfig[emailStatus] || statusConfig.sent
@@ -277,7 +295,7 @@ export default function EmailsPage() {
                       <TableRow
                         key={email.id}
                         className="border-zinc-800 cursor-pointer hover:bg-zinc-800/50 transition-colors"
-                        onClick={() => setSelectedEmail(email)}
+                        onClick={() => handleEmailClick(email)}
                       >
                         <TableCell>
                           <Link
@@ -399,136 +417,152 @@ export default function EmailsPage() {
         <Send className="h-6 w-6" />
       </Link>
 
-      {/* Email Detail Dialog */}
-      <Dialog open={!!selectedEmail} onOpenChange={() => setSelectedEmail(null)}>
-        <DialogContent className="max-w-2xl max-h-[90vh] sm:max-h-[80vh] overflow-y-auto bg-zinc-900 border-zinc-700 mx-2 sm:mx-auto rounded-xl">
+      {/* Email Thread Dialog - Messenger Style */}
+      <Dialog open={!!selectedEmail} onOpenChange={handleCloseDialog}>
+        <DialogContent className="max-w-2xl max-h-[90vh] sm:max-h-[85vh] flex flex-col bg-zinc-900 border-zinc-700 mx-2 sm:mx-auto rounded-xl p-0 overflow-hidden">
           {selectedEmail && (
             <>
-              <DialogHeader>
+              {/* Header */}
+              <DialogHeader className="p-4 border-b border-zinc-800 shrink-0">
                 <DialogTitle className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-600/20 to-orange-500/20">
-                    <Mail className="h-5 w-5 text-indigo-400" />
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-indigo-600/30 to-indigo-500/10">
+                    <Building2 className="h-5 w-5 text-indigo-400" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-lg font-semibold text-zinc-100 truncate">
-                      {selectedEmail.subject}
-                    </p>
-                    <p className="text-sm text-zinc-500">
-                      {selectedEmail.company_name || selectedEmail.contact_email || "—"}
+                    <Link
+                      href={`/leads/${selectedEmail.lead_id}`}
+                      className="text-lg font-semibold text-zinc-100 hover:text-indigo-400 transition-colors truncate block"
+                    >
+                      {threadData?.company_name || selectedEmail.company_name || "—"}
+                    </Link>
+                    <p className="text-sm text-zinc-500 truncate">
+                      {threadData?.contact_name || selectedEmail.contact_name || ""}{" "}
+                      {(threadData?.contact_email || selectedEmail.contact_email) && (
+                        <span className="text-zinc-600">
+                          • {threadData?.contact_email || selectedEmail.contact_email}
+                        </span>
+                      )}
                     </p>
                   </div>
                   {getStatusBadge(selectedEmail.status, !!selectedEmail.replied_at)}
                 </DialogTitle>
               </DialogHeader>
 
-              <div className="space-y-6 mt-4">
-                {/* Meta Info */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 p-3 sm:p-4 rounded-xl bg-zinc-800/50">
-                  <div className="flex items-center gap-3">
-                    <Building2 className="h-5 w-5 text-zinc-500" />
-                    <div>
-                      <p className="text-xs text-zinc-500">Компания</p>
-                      <Link
-                        href={`/leads/${selectedEmail.lead_id}`}
-                        className="text-sm text-indigo-400 hover:text-indigo-300"
+              {/* Chat Messages */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-zinc-950/50">
+                {threadLoading ? (
+                  <div className="flex flex-col gap-4">
+                    <div className="flex justify-end">
+                      <Skeleton className="h-24 w-3/4 rounded-2xl rounded-br-md" />
+                    </div>
+                    <div className="flex justify-start">
+                      <Skeleton className="h-16 w-2/3 rounded-2xl rounded-bl-md" />
+                    </div>
+                  </div>
+                ) : threadData?.thread && threadData.thread.length > 0 ? (
+                  threadData.thread.map((message) => (
+                    <div
+                      key={message.id}
+                      className={`flex ${message.direction === "outbound" ? "justify-end" : "justify-start"}`}
+                    >
+                      <div
+                        className={`max-w-[85%] sm:max-w-[75%] ${
+                          message.direction === "outbound"
+                            ? "bg-indigo-600 text-white rounded-2xl rounded-br-md"
+                            : "bg-zinc-800 text-zinc-100 rounded-2xl rounded-bl-md"
+                        }`}
                       >
-                        {selectedEmail.company_name || selectedEmail.contact_email || "—"}
-                      </Link>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <User className="h-5 w-5 text-zinc-500" />
-                    <div>
-                      <p className="text-xs text-zinc-500">Контакт</p>
-                      <p className="text-sm text-zinc-200">{selectedEmail.contact_name || selectedEmail.contact_email || "—"}</p>
-                      {selectedEmail.contact_name && selectedEmail.contact_email && (
-                        <p className="text-xs text-zinc-400">{selectedEmail.contact_email}</p>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <Clock className="h-5 w-5 text-zinc-500" />
-                    <div>
-                      <p className="text-xs text-zinc-500">Отправлено</p>
-                      <p className="text-sm text-zinc-200">
-                        {formatDateTime(selectedEmail.sent_at)}
-                      </p>
-                    </div>
-                  </div>
-                  {selectedEmail.opened_at && (
-                    <div className="flex items-center gap-3">
-                      <MailOpen className="h-5 w-5 text-emerald-500" />
-                      <div>
-                        <p className="text-xs text-zinc-500">Открыто</p>
-                        <p className="text-sm text-emerald-400">
-                          {formatDateTime(selectedEmail.opened_at)}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                  {selectedEmail.replied_at && (
-                    <div className="flex items-center gap-3">
-                      <MessageSquare className="h-5 w-5 text-amber-500" />
-                      <div>
-                        <p className="text-xs text-zinc-500">Ответ получен</p>
-                        <p className="text-sm text-amber-400">
-                          {formatDateTime(selectedEmail.replied_at)}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Email Body */}
-                <div>
-                  <h4 className="text-sm font-medium text-zinc-400 mb-3">Текст письма</h4>
-                  <div
-                    className="p-4 rounded-xl bg-zinc-800/50 border border-zinc-700 text-zinc-200 leading-relaxed prose prose-invert prose-sm max-w-none"
-                    dangerouslySetInnerHTML={{ __html: selectedEmail.body || "" }}
-                  />
-                </div>
-
-                {/* Thread */}
-                {selectedEmail.thread && selectedEmail.thread.length > 0 && (
-                  <div>
-                    <h4 className="text-sm font-medium text-zinc-400 mb-3">
-                      История переписки ({selectedEmail.thread.length})
-                    </h4>
-                    <div className="space-y-3">
-                      {selectedEmail.thread.map((message) => (
+                        {/* Message Header */}
                         <div
-                          key={message.id}
-                          className={`p-4 rounded-xl border ${
-                            message.direction === "inbound"
-                              ? "bg-amber-600/10 border-amber-500/30"
-                              : "bg-zinc-800/50 border-zinc-700"
+                          className={`px-4 pt-3 pb-1 flex items-center gap-2 ${
+                            message.direction === "outbound"
+                              ? "text-indigo-200"
+                              : "text-zinc-400"
                           }`}
                         >
-                          <div className="flex items-center gap-2 mb-2">
-                            {message.direction === "inbound" ? (
-                              <ArrowDownLeft className="h-4 w-4 text-amber-400" />
-                            ) : (
-                              <ArrowUpRight className="h-4 w-4 text-indigo-400" />
-                            )}
-                            <span className="text-sm font-medium text-zinc-200">
-                              {message.direction === "inbound" ? "Входящее" : "Исходящее"}
-                            </span>
-                            <span className="text-xs text-zinc-500">
-                              {formatDateTime(message.sent_at)}
-                            </span>
-                          </div>
-                          <p className="text-sm font-medium text-zinc-300 mb-1">
-                            {message.subject}
-                          </p>
-                          <div
-                            className="text-sm text-zinc-400 prose prose-invert prose-sm max-w-none"
-                            dangerouslySetInnerHTML={{ __html: message.body || "" }}
-                          />
+                          {message.direction === "outbound" ? (
+                            <ArrowUpRight className="h-3.5 w-3.5" />
+                          ) : (
+                            <ArrowDownLeft className="h-3.5 w-3.5" />
+                          )}
+                          <span className="text-xs font-medium">
+                            {message.direction === "outbound" ? "Вы" : threadData.contact_name || "Ответ"}
+                          </span>
+                          <span className="text-xs opacity-70">
+                            {formatDateTime(message.sent_at)}
+                          </span>
                         </div>
-                      ))}
+
+                        {/* Subject (if different from Re:) */}
+                        {message.subject && !message.subject.startsWith("Re:") && (
+                          <div
+                            className={`px-4 pb-1 text-xs font-medium ${
+                              message.direction === "outbound"
+                                ? "text-indigo-100"
+                                : "text-zinc-300"
+                            }`}
+                          >
+                            {message.subject}
+                          </div>
+                        )}
+
+                        {/* Message Body */}
+                        <div
+                          className={`px-4 pb-3 text-sm leading-relaxed prose prose-sm max-w-none ${
+                            message.direction === "outbound"
+                              ? "prose-invert prose-p:text-white prose-strong:text-white"
+                              : "prose-invert prose-p:text-zinc-200"
+                          }`}
+                          dangerouslySetInnerHTML={{ __html: message.body || "" }}
+                        />
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  // Fallback: show current email if no thread data
+                  <div className="flex justify-end">
+                    <div className="max-w-[85%] sm:max-w-[75%] bg-indigo-600 text-white rounded-2xl rounded-br-md">
+                      <div className="px-4 pt-3 pb-1 flex items-center gap-2 text-indigo-200">
+                        <ArrowUpRight className="h-3.5 w-3.5" />
+                        <span className="text-xs font-medium">Вы</span>
+                        <span className="text-xs opacity-70">
+                          {formatDateTime(selectedEmail.sent_at)}
+                        </span>
+                      </div>
+                      <div className="px-4 pb-1 text-xs font-medium text-indigo-100">
+                        {selectedEmail.subject}
+                      </div>
+                      <div
+                        className="px-4 pb-3 text-sm leading-relaxed prose prose-sm max-w-none prose-invert prose-p:text-white"
+                        dangerouslySetInnerHTML={{ __html: selectedEmail.body || "" }}
+                      />
                     </div>
                   </div>
                 )}
+              </div>
+
+              {/* Footer with meta info */}
+              <div className="p-3 border-t border-zinc-800 shrink-0 bg-zinc-900">
+                <div className="flex flex-wrap items-center gap-3 text-xs text-zinc-500">
+                  {selectedEmail.opened_at && (
+                    <div className="flex items-center gap-1.5 text-emerald-400">
+                      <MailOpen className="h-3.5 w-3.5" />
+                      <span>Открыто {formatDateTime(selectedEmail.opened_at)}</span>
+                    </div>
+                  )}
+                  {selectedEmail.replied_at && (
+                    <div className="flex items-center gap-1.5 text-amber-400">
+                      <MessageSquare className="h-3.5 w-3.5" />
+                      <span>Ответ {formatDateTime(selectedEmail.replied_at)}</span>
+                    </div>
+                  )}
+                  {threadData?.thread && threadData.thread.length > 1 && (
+                    <div className="flex items-center gap-1.5 text-zinc-400">
+                      <Mail className="h-3.5 w-3.5" />
+                      <span>{threadData.thread.length} сообщений</span>
+                    </div>
+                  )}
+                </div>
               </div>
             </>
           )}
