@@ -83,6 +83,31 @@ class NotificationCountsResponse(BaseModel):
     total_unread: int = 0  # Total for main badge
 
 
+class ThreadSummary(BaseModel):
+    """Summary of an email thread (grouped by lead)."""
+
+    lead_id: str
+    company_name: str | None = None
+    contact_name: str | None = None
+    contact_email: str | None = None
+    last_subject: str
+    last_snippet: str  # Preview of last message
+    message_count: int
+    has_reply: bool
+    status: str  # Latest status
+    last_message_at: datetime | None = None
+
+
+class ThreadListResponse(BaseModel):
+    """Thread list response."""
+
+    items: list[ThreadSummary]
+    total: int
+    page: int
+    limit: int
+    pages: int
+
+
 class SendEmailRequest(BaseModel):
     """Send email request."""
 
@@ -146,6 +171,170 @@ def _get_email_status(email) -> str:
     if email.sent_at:
         return "sent"
     return "pending"
+
+
+def _strip_html(html: str | None) -> str:
+    """Strip HTML tags for plain text snippet."""
+    if not html:
+        return ""
+    import re
+    text = re.sub(r"<[^>]+>", "", html)
+    text = text.replace("&nbsp;", " ").strip()
+    return text[:100] + "..." if len(text) > 100 else text
+
+
+@router.get("/threads", response_model=ThreadListResponse)
+async def list_threads(
+    status: str | None = Query(None, description="Filter by status"),
+    search: str | None = Query(None, description="Search by company, contact or subject"),
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100, description="Items per page"),
+) -> ThreadListResponse:
+    """List email threads grouped by lead (like Gmail).
+
+    Each row = one company/lead with thread summary.
+
+    Args:
+        status: Filter by status
+        search: Search by company, contact or subject
+        page: Page number
+        limit: Items per page
+
+    Returns:
+        Paginated list of threads
+    """
+    from sqlalchemy import func, select, case, or_
+
+    from app.models.db import EmailMessageDB, EmployerContactDB, EmployerLeadDB
+
+    async with async_session_factory() as db:
+        # Subquery to get thread stats per lead
+        thread_stats = (
+            select(
+                EmailMessageDB.lead_id,
+                func.count(EmailMessageDB.id).label("message_count"),
+                func.max(EmailMessageDB.sent_at).label("last_sent_at"),
+                func.max(EmailMessageDB.replied_at).label("last_replied_at"),
+                func.bool_or(EmailMessageDB.replied).label("has_reply"),
+                func.bool_or(EmailMessageDB.bounced).label("has_bounce"),
+                func.bool_or(EmailMessageDB.opened).label("has_open"),
+            )
+            .group_by(EmailMessageDB.lead_id)
+            .subquery()
+        )
+
+        # Main query joining with leads and contacts
+        query = (
+            select(
+                EmployerLeadDB.id.label("lead_id"),
+                EmployerLeadDB.company_name,
+                thread_stats.c.message_count,
+                thread_stats.c.last_sent_at,
+                thread_stats.c.last_replied_at,
+                thread_stats.c.has_reply,
+                thread_stats.c.has_bounce,
+                thread_stats.c.has_open,
+            )
+            .join(thread_stats, EmployerLeadDB.id == thread_stats.c.lead_id)
+        )
+
+        # Apply search filter
+        if search:
+            search_term = f"%{search}%"
+            query = query.where(
+                or_(
+                    EmployerLeadDB.company_name.ilike(search_term),
+                )
+            )
+
+        # Apply status filter
+        if status:
+            if status == "replied":
+                query = query.where(thread_stats.c.has_reply == True)
+            elif status == "bounced":
+                query = query.where(thread_stats.c.has_bounce == True)
+            elif status == "opened":
+                query = query.where(thread_stats.c.has_open == True)
+
+        # Count total
+        count_query = select(func.count()).select_from(query.subquery())
+        total_result = await db.execute(count_query)
+        total = total_result.scalar_one()
+
+        # Apply pagination and ordering
+        offset = (page - 1) * limit
+        query = query.order_by(
+            func.coalesce(thread_stats.c.last_replied_at, thread_stats.c.last_sent_at).desc()
+        ).offset(offset).limit(limit)
+
+        result = await db.execute(query)
+        rows = result.all()
+
+        # Build response with last message info
+        items = []
+        for row in rows:
+            lead_id = row.lead_id
+
+            # Get last email for this lead
+            last_email_result = await db.execute(
+                select(EmailMessageDB)
+                .where(EmailMessageDB.lead_id == lead_id)
+                .order_by(EmailMessageDB.sent_at.desc().nullslast())
+                .limit(1)
+            )
+            last_email = last_email_result.scalar_one_or_none()
+
+            # Get contact info
+            contact_name = None
+            contact_email = None
+            if last_email and last_email.contact_id:
+                contact_result = await db.execute(
+                    select(EmployerContactDB).where(
+                        EmployerContactDB.id == last_email.contact_id
+                    )
+                )
+                contact = contact_result.scalar_one_or_none()
+                if contact:
+                    contact_name = contact.full_name
+                    contact_email = contact.email
+
+            # Determine status
+            if row.has_reply:
+                status_val = "replied"
+            elif row.has_bounce:
+                status_val = "bounced"
+            elif row.has_open:
+                status_val = "opened"
+            else:
+                status_val = "sent"
+
+            # Determine last message (reply or sent)
+            last_message_at = row.last_replied_at or row.last_sent_at
+            last_body = last_email.reply_text if last_email and last_email.replied else (last_email.body if last_email else "")
+
+            items.append(
+                ThreadSummary(
+                    lead_id=str(lead_id),
+                    company_name=row.company_name,
+                    contact_name=contact_name,
+                    contact_email=contact_email,
+                    last_subject=last_email.subject if last_email else "",
+                    last_snippet=_strip_html(last_body),
+                    message_count=row.message_count + (1 if row.has_reply else 0),  # +1 for replies
+                    has_reply=row.has_reply or False,
+                    status=status_val,
+                    last_message_at=last_message_at,
+                )
+            )
+
+        pages = (total + limit - 1) // limit if total > 0 else 1
+        return ThreadListResponse(
+            items=items,
+            total=total,
+            page=page,
+            limit=limit,
+            pages=pages,
+        )
 
 
 @router.get("", response_model=EmailListResponse)

@@ -15,21 +15,13 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Skeleton } from "@/components/ui/skeleton"
-import { api, Email, EmailThreadResponse } from "@/lib/api"
+import { api, ThreadSummary } from "@/lib/api"
 import { formatDateTime, formatNumber } from "@/lib/utils"
 import {
   Search,
@@ -46,20 +38,12 @@ import {
   ArrowUpRight,
   ArrowDownLeft,
   X,
-  FlaskConical,
-  Reply,
+  MessagesSquare,
 } from "lucide-react"
-
-// Strip HTML tags for plain text preview
-function stripHtml(html: string | undefined): string {
-  if (!html) return ""
-  return html.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim()
-}
 
 const EMAIL_STATUSES = [
   { value: "all", label: "Все статусы" },
   { value: "sent", label: "Отправлено" },
-  { value: "delivered", label: "Доставлено" },
   { value: "opened", label: "Открыто" },
   { value: "replied", label: "Ответили" },
   { value: "bounced", label: "Ошибка" },
@@ -77,14 +61,14 @@ export default function EmailsPage() {
   const [search, setSearch] = useState("")
   const [status, setStatus] = useState("all")
   const [page, setPage] = useState(1)
-  const [selectedEmail, setSelectedEmail] = useState<Email | null>(null)
-  const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null)
+  const [selectedThread, setSelectedThread] = useState<ThreadSummary | null>(null)
   const limit = 20
 
+  // Fetch threads (grouped by lead)
   const { data, isLoading } = useQuery({
-    queryKey: ["emails", { search, status, page, limit }],
+    queryKey: ["email-threads", { search, status, page, limit }],
     queryFn: () =>
-      api.getEmails({
+      api.getThreads({
         search: search || undefined,
         status: status !== "all" ? status : undefined,
         page,
@@ -92,50 +76,37 @@ export default function EmailsPage() {
       }),
   })
 
-  // Fetch real stats from API
+  // Fetch stats
   const { data: emailStats } = useQuery({
     queryKey: ["email-stats"],
     queryFn: () => api.getEmailStats(),
-    staleTime: 30000, // 30 seconds
+    staleTime: 30000,
   })
 
-  // Fetch thread when email is selected
+  // Fetch thread messages when dialog opens
   const { data: threadData, isLoading: threadLoading } = useQuery({
-    queryKey: ["email-thread", selectedLeadId],
-    queryFn: () => api.getEmailThread(selectedLeadId!),
-    enabled: !!selectedLeadId,
+    queryKey: ["email-thread", selectedThread?.lead_id],
+    queryFn: () => api.getEmailThread(selectedThread!.lead_id),
+    enabled: !!selectedThread,
   })
-
-  const handleEmailClick = (email: Email) => {
-    setSelectedEmail(email)
-    setSelectedLeadId(email.lead_id)
-  }
 
   const handleCloseDialog = () => {
-    setSelectedEmail(null)
-    setSelectedLeadId(null)
+    setSelectedThread(null)
   }
 
-  const getStatusBadge = (emailStatus: string, hasReply?: boolean) => {
-    const config = statusConfig[emailStatus] || statusConfig.sent
+  const getStatusBadge = (threadStatus: string) => {
+    const config = statusConfig[threadStatus] || statusConfig.sent
     const Icon = config.icon
     return (
-      <div className="flex items-center gap-1.5">
-        <Badge variant="outline" className={`gap-1.5 ${config.color} ${config.bgColor} border-0`}>
-          <Icon className="h-3 w-3" />
-          {config.label}
-        </Badge>
-        {hasReply && emailStatus !== "replied" && (
-          <Badge variant="outline" className="gap-1 text-amber-400 bg-amber-500/20 border-0 text-xs">
-            <MessageSquare className="h-3 w-3" />
-          </Badge>
-        )}
-      </div>
+      <Badge variant="outline" className={`gap-1.5 ${config.color} ${config.bgColor} border-0`}>
+        <Icon className="h-3 w-3" />
+        {config.label}
+      </Badge>
     )
   }
 
   const stats = {
-    total: emailStats?.total_sent || data?.total || 0,
+    total: emailStats?.total_sent || 0,
     sent: emailStats?.total_delivered || 0,
     opened: emailStats?.total_opened || 0,
     replied: emailStats?.total_replied || 0,
@@ -153,10 +124,9 @@ export default function EmailsPage() {
             <div>
               <h1 className="text-2xl sm:text-3xl font-bold text-zinc-100">Письма</h1>
               <p className="text-zinc-400 mt-1 text-sm sm:text-base">
-                История email-коммуникаций
+                Переписка с компаниями
               </p>
             </div>
-            {/* Desktop: Test Email Button */}
             <Link href="/test-email" className="hidden sm:block">
               <Button className="gap-2 bg-indigo-600 hover:bg-indigo-700">
                 <Send className="h-4 w-4" />
@@ -182,7 +152,7 @@ export default function EmailsPage() {
             <div className="p-3 sm:p-4 rounded-xl bg-gradient-to-br from-blue-600/20 to-blue-600/5 border border-blue-500/20">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs sm:text-sm text-zinc-400">Отправлено</p>
+                  <p className="text-xs sm:text-sm text-zinc-400">Доставлено</p>
                   <p className="text-xl sm:text-2xl font-bold text-blue-400 mt-1">
                     {formatNumber(stats.sent)}
                   </p>
@@ -221,7 +191,7 @@ export default function EmailsPage() {
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
               <Input
-                placeholder="Поиск по компании, контакту..."
+                placeholder="Поиск по компании..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-9 bg-zinc-900/50 border-zinc-700"
@@ -260,105 +230,84 @@ export default function EmailsPage() {
         </div>
       </div>
 
-      {/* Content */}
+      {/* Thread List */}
       <div className="p-4 sm:p-6 pb-24 sm:pb-6">
         <Card className="border-zinc-800 bg-zinc-900/50">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Mail className="h-5 w-5 text-indigo-400" />
-              История писем
+              <MessagesSquare className="h-5 w-5 text-indigo-400" />
+              Переписки
+              {data?.total ? (
+                <span className="text-sm font-normal text-zinc-500">
+                  ({data.total} компаний)
+                </span>
+              ) : null}
             </CardTitle>
           </CardHeader>
           <CardContent>
             {isLoading ? (
-              <div className="space-y-4">
+              <div className="space-y-2">
                 {[1, 2, 3, 4, 5].map((i) => (
-                  <Skeleton key={i} className="h-16" />
+                  <Skeleton key={i} className="h-20" />
                 ))}
               </div>
             ) : data?.items?.length ? (
               <>
-                <div className="overflow-x-auto -mx-4 sm:mx-0">
-                <Table className="min-w-[800px] sm:min-w-0">
-                  <TableHeader>
-                    <TableRow className="border-zinc-800 hover:bg-transparent">
-                      <TableHead className="text-zinc-400">Компания</TableHead>
-                      <TableHead className="text-zinc-400">Контакт</TableHead>
-                      <TableHead className="text-zinc-400">Тема</TableHead>
-                      <TableHead className="text-zinc-400">Текст</TableHead>
-                      <TableHead className="text-zinc-400">Статус</TableHead>
-                      <TableHead className="text-zinc-400">Дата</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {data.items.map((email) => (
-                      <TableRow
-                        key={email.id}
-                        className="border-zinc-800 cursor-pointer hover:bg-zinc-800/50 transition-colors"
-                        onClick={() => handleEmailClick(email)}
-                      >
-                        <TableCell>
-                          <Link
-                            href={`/leads/${email.lead_id}`}
-                            onClick={(e) => e.stopPropagation()}
-                            className="flex items-center gap-2 text-zinc-200 hover:text-indigo-400 transition-colors"
-                          >
-                            <Building2 className="h-4 w-4 text-zinc-500" />
-                            <span className="font-medium truncate max-w-[150px]">
-                              {email.company_name || email.contact_email || "—"}
-                            </span>
-                          </Link>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2 text-zinc-300">
-                            <User className="h-4 w-4 text-zinc-500" />
-                            <div className="truncate max-w-[120px]">
-                              <p className="truncate">{email.contact_name || email.contact_email || "—"}</p>
-                              {email.contact_name && email.contact_email && (
-                                <p className="text-xs text-zinc-500 truncate">
-                                  {email.contact_email}
-                                </p>
+                <div className="divide-y divide-zinc-800">
+                  {data.items.map((thread) => (
+                    <div
+                      key={thread.lead_id}
+                      className="py-4 px-2 -mx-2 cursor-pointer hover:bg-zinc-800/50 rounded-lg transition-colors"
+                      onClick={() => setSelectedThread(thread)}
+                    >
+                      <div className="flex items-start gap-3">
+                        {/* Avatar */}
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-600/30 to-indigo-500/10">
+                          <Building2 className="h-5 w-5 text-indigo-400" />
+                        </div>
+
+                        {/* Content */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-2 mb-1">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="font-semibold text-zinc-100 truncate">
+                                {thread.company_name || "—"}
+                              </span>
+                              {thread.message_count > 1 && (
+                                <Badge variant="outline" className="text-xs text-zinc-400 bg-zinc-800 border-zinc-700 shrink-0">
+                                  {thread.message_count}
+                                </Badge>
                               )}
                             </div>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium text-zinc-200 truncate block max-w-[180px]">
-                              {email.subject}
+                            <span className="text-xs text-zinc-500 shrink-0">
+                              {thread.last_message_at ? formatDateTime(thread.last_message_at) : "—"}
                             </span>
-                            {email.email_type === "test" && (
-                              <Badge variant="outline" className="gap-1 text-purple-400 bg-purple-500/20 border-0 text-xs shrink-0">
-                                <FlaskConical className="h-3 w-3" />
-                                Тест
-                              </Badge>
-                            )}
-                            {email.email_type === "auto_reply" && (
-                              <Badge variant="outline" className="gap-1 text-cyan-400 bg-cyan-500/20 border-0 text-xs shrink-0">
-                                <Reply className="h-3 w-3" />
-                                Авто
-                              </Badge>
-                            )}
                           </div>
-                        </TableCell>
-                        <TableCell>
-                          <span className="text-zinc-400 truncate block max-w-[200px]">
-                            {stripHtml(email.body).slice(0, 60)}...
-                          </span>
-                        </TableCell>
-                        <TableCell>
-                          {getStatusBadge(email.status, !!email.replied_at)}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-1.5 text-zinc-500 text-sm">
-                            <Clock className="h-3.5 w-3.5" />
-                            {formatDateTime(email.sent_at)}
+
+                          <div className="flex items-center gap-2 mb-1.5">
+                            <User className="h-3.5 w-3.5 text-zinc-500 shrink-0" />
+                            <span className="text-sm text-zinc-400 truncate">
+                              {thread.contact_name || thread.contact_email || "—"}
+                            </span>
                           </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0 flex-1">
+                              <p className={`text-sm truncate ${thread.has_reply ? "font-medium text-zinc-200" : "text-zinc-400"}`}>
+                                {thread.last_subject}
+                              </p>
+                              <p className="text-xs text-zinc-500 truncate mt-0.5">
+                                {thread.last_snippet}
+                              </p>
+                            </div>
+                            <div className="shrink-0">
+                              {getStatusBadge(thread.status)}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
 
                 {/* Pagination */}
@@ -396,12 +345,12 @@ export default function EmailsPage() {
                   <Mail className="h-10 w-10 text-zinc-500" />
                 </div>
                 <h3 className="text-lg font-semibold text-zinc-200 mb-2">
-                  Писем пока нет
+                  Переписок пока нет
                 </h3>
                 <p className="text-zinc-500 text-center max-w-md">
                   {search || status !== "all"
                     ? "Попробуйте изменить параметры поиска"
-                    : "Письма появятся после запуска email-кампаний"}
+                    : "Переписки появятся после запуска email-кампаний"}
                 </p>
               </div>
             )}
@@ -409,7 +358,7 @@ export default function EmailsPage() {
         </Card>
       </div>
 
-      {/* Mobile FAB: Test Email Button */}
+      {/* Mobile FAB */}
       <Link
         href="/test-email"
         className="sm:hidden fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-indigo-600 text-white shadow-lg shadow-indigo-600/30 hover:bg-indigo-700 active:scale-95 transition-all"
@@ -417,10 +366,10 @@ export default function EmailsPage() {
         <Send className="h-6 w-6" />
       </Link>
 
-      {/* Email Thread Dialog - Messenger Style */}
-      <Dialog open={!!selectedEmail} onOpenChange={handleCloseDialog}>
+      {/* Thread Dialog - Messenger Style */}
+      <Dialog open={!!selectedThread} onOpenChange={handleCloseDialog}>
         <DialogContent className="max-w-2xl max-h-[90vh] sm:max-h-[85vh] flex flex-col bg-zinc-900 border-zinc-700 mx-2 sm:mx-auto rounded-xl p-0 overflow-hidden">
-          {selectedEmail && (
+          {selectedThread && (
             <>
               {/* Header */}
               <DialogHeader className="p-4 border-b border-zinc-800 shrink-0">
@@ -430,21 +379,21 @@ export default function EmailsPage() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <Link
-                      href={`/leads/${selectedEmail.lead_id}`}
+                      href={`/leads/${selectedThread.lead_id}`}
                       className="text-lg font-semibold text-zinc-100 hover:text-indigo-400 transition-colors truncate block"
                     >
-                      {threadData?.company_name || selectedEmail.company_name || "—"}
+                      {selectedThread.company_name || "—"}
                     </Link>
                     <p className="text-sm text-zinc-500 truncate">
-                      {threadData?.contact_name || selectedEmail.contact_name || ""}{" "}
-                      {(threadData?.contact_email || selectedEmail.contact_email) && (
+                      {selectedThread.contact_name || ""}{" "}
+                      {selectedThread.contact_email && (
                         <span className="text-zinc-600">
-                          • {threadData?.contact_email || selectedEmail.contact_email}
+                          • {selectedThread.contact_email}
                         </span>
                       )}
                     </p>
                   </div>
-                  {getStatusBadge(selectedEmail.status, !!selectedEmail.replied_at)}
+                  {getStatusBadge(selectedThread.status)}
                 </DialogTitle>
               </DialogHeader>
 
@@ -493,7 +442,7 @@ export default function EmailsPage() {
                           </span>
                         </div>
 
-                        {/* Subject (if different from Re:) */}
+                        {/* Subject (if not Re:) */}
                         {message.subject && !message.subject.startsWith("Re:") && (
                           <div
                             className={`px-4 pb-1 text-xs font-medium ${
@@ -519,49 +468,33 @@ export default function EmailsPage() {
                     </div>
                   ))
                 ) : (
-                  // Fallback: show current email if no thread data
-                  <div className="flex justify-end">
-                    <div className="max-w-[85%] sm:max-w-[75%] bg-indigo-600 text-white rounded-2xl rounded-br-md">
-                      <div className="px-4 pt-3 pb-1 flex items-center gap-2 text-indigo-200">
-                        <ArrowUpRight className="h-3.5 w-3.5" />
-                        <span className="text-xs font-medium">Вы</span>
-                        <span className="text-xs opacity-70">
-                          {formatDateTime(selectedEmail.sent_at)}
-                        </span>
-                      </div>
-                      <div className="px-4 pb-1 text-xs font-medium text-indigo-100">
-                        {selectedEmail.subject}
-                      </div>
-                      <div
-                        className="px-4 pb-3 text-sm leading-relaxed prose prose-sm max-w-none prose-invert prose-p:text-white"
-                        dangerouslySetInnerHTML={{ __html: selectedEmail.body || "" }}
-                      />
-                    </div>
+                  <div className="text-center text-zinc-500 py-8">
+                    Нет сообщений
                   </div>
                 )}
               </div>
 
-              {/* Footer with meta info */}
+              {/* Footer */}
               <div className="p-3 border-t border-zinc-800 shrink-0 bg-zinc-900">
                 <div className="flex flex-wrap items-center gap-3 text-xs text-zinc-500">
-                  {selectedEmail.opened_at && (
-                    <div className="flex items-center gap-1.5 text-emerald-400">
-                      <MailOpen className="h-3.5 w-3.5" />
-                      <span>Открыто {formatDateTime(selectedEmail.opened_at)}</span>
-                    </div>
-                  )}
-                  {selectedEmail.replied_at && (
-                    <div className="flex items-center gap-1.5 text-amber-400">
-                      <MessageSquare className="h-3.5 w-3.5" />
-                      <span>Ответ {formatDateTime(selectedEmail.replied_at)}</span>
-                    </div>
-                  )}
-                  {threadData?.thread && threadData.thread.length > 1 && (
+                  {threadData?.thread && threadData.thread.length > 0 && (
                     <div className="flex items-center gap-1.5 text-zinc-400">
                       <Mail className="h-3.5 w-3.5" />
                       <span>{threadData.thread.length} сообщений</span>
                     </div>
                   )}
+                  {selectedThread.has_reply && (
+                    <div className="flex items-center gap-1.5 text-amber-400">
+                      <MessageSquare className="h-3.5 w-3.5" />
+                      <span>Есть ответ</span>
+                    </div>
+                  )}
+                  <Link
+                    href={`/leads/${selectedThread.lead_id}`}
+                    className="ml-auto text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
+                  >
+                    Карточка лида →
+                  </Link>
                 </div>
               </div>
             </>

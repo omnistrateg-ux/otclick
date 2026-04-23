@@ -150,6 +150,34 @@ export interface EmailThreadResponse {
   thread: EmailThread[]
 }
 
+export interface ThreadSummary {
+  lead_id: string
+  company_name: string | null
+  contact_name: string | null
+  contact_email: string | null
+  last_subject: string
+  last_snippet: string
+  message_count: number
+  has_reply: boolean
+  status: string
+  last_message_at: string | null
+}
+
+export interface ThreadListResponse {
+  items: ThreadSummary[]
+  total: number
+  page: number
+  limit: number
+  pages: number
+}
+
+export interface ThreadsFilters {
+  status?: string
+  search?: string
+  page?: number
+  limit?: number
+}
+
 export interface EmailsFilters {
   status?: string
   search?: string
@@ -331,6 +359,18 @@ export const api = {
   getHandoffs: async (): Promise<Handoff[]> => {
     const response = await fetcher<PaginatedResponse<Handoff>>("/handoffs")
     return response.items || []
+  },
+
+  // Email Threads (grouped by lead)
+  getThreads: (filters?: ThreadsFilters) => {
+    const params = new URLSearchParams()
+    if (filters?.status) params.set("status", filters.status)
+    if (filters?.search) params.set("search", filters.search)
+    if (filters?.page) params.set("page", String(filters.page))
+    if (filters?.limit) params.set("limit", String(filters.limit))
+
+    const query = params.toString()
+    return fetcher<ThreadListResponse>(`/emails/threads${query ? `?${query}` : ""}`)
   },
 
   // Emails
