@@ -178,6 +178,19 @@ export interface ThreadsFilters {
   limit?: number
 }
 
+export interface ReplyRequest {
+  lead_id: string
+  body: string
+}
+
+export interface ReplyResponse {
+  success: boolean
+  email_id?: string
+  message_id?: string
+  sent_at?: string
+  error?: string
+}
+
 export interface EmailsFilters {
   status?: string
   search?: string
@@ -388,6 +401,12 @@ export const api = {
   getEmail: (id: string) => fetcher<Email>(`/emails/${id}`),
 
   getEmailThread: (leadId: string) => fetcher<EmailThreadResponse>(`/emails/thread/${leadId}`),
+
+  sendReply: (data: ReplyRequest) =>
+    fetcher<ReplyResponse>("/emails/reply", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
 
   // Test email (manual send)
   sendTestEmail: (data: TestEmailRequest) =>

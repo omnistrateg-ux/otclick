@@ -1,7 +1,7 @@
 "use client"
 
-import { useState } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useState, useRef, useEffect } from "react"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import Link from "next/link"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -21,6 +21,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Textarea } from "@/components/ui/textarea"
 import { api, ThreadSummary } from "@/lib/api"
 import { formatDateTime, formatNumber } from "@/lib/utils"
 import {
@@ -39,6 +40,7 @@ import {
   ArrowDownLeft,
   X,
   MessagesSquare,
+  Loader2,
 } from "lucide-react"
 
 const EMAIL_STATUSES = [
@@ -62,6 +64,9 @@ export default function EmailsPage() {
   const [status, setStatus] = useState("all")
   const [page, setPage] = useState(1)
   const [selectedThread, setSelectedThread] = useState<ThreadSummary | null>(null)
+  const [replyText, setReplyText] = useState("")
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const queryClient = useQueryClient()
   const limit = 20
 
   // Fetch threads (grouped by lead)
@@ -90,8 +95,37 @@ export default function EmailsPage() {
     enabled: !!selectedThread,
   })
 
+  // Send reply mutation
+  const replyMutation = useMutation({
+    mutationFn: (data: { lead_id: string; body: string }) => api.sendReply(data),
+    onSuccess: (result) => {
+      if (result.success) {
+        setReplyText("")
+        // Refresh thread
+        queryClient.invalidateQueries({ queryKey: ["email-thread", selectedThread?.lead_id] })
+        queryClient.invalidateQueries({ queryKey: ["email-threads"] })
+      }
+    },
+  })
+
+  // Auto-scroll to bottom when new messages arrive
+  useEffect(() => {
+    if (threadData?.thread && messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: "smooth" })
+    }
+  }, [threadData?.thread])
+
   const handleCloseDialog = () => {
     setSelectedThread(null)
+    setReplyText("")
+  }
+
+  const handleSendReply = () => {
+    if (!selectedThread || !replyText.trim()) return
+    replyMutation.mutate({
+      lead_id: selectedThread.lead_id,
+      body: replyText.trim(),
+    })
   }
 
   const getStatusBadge = (threadStatus: string) => {
@@ -472,23 +506,50 @@ export default function EmailsPage() {
                     Нет сообщений
                   </div>
                 )}
+                <div ref={messagesEndRef} />
               </div>
 
-              {/* Footer */}
-              <div className="p-3 border-t border-zinc-800 shrink-0 bg-zinc-900">
+              {/* Reply Input */}
+              <div className="p-3 border-t border-zinc-800 shrink-0 bg-zinc-900 space-y-3">
+                {replyMutation.error && (
+                  <div className="text-sm text-red-400 bg-red-500/10 px-3 py-2 rounded-lg">
+                    Ошибка: {replyMutation.error instanceof Error ? replyMutation.error.message : "Не удалось отправить"}
+                  </div>
+                )}
+                {replyMutation.data && !replyMutation.data.success && (
+                  <div className="text-sm text-red-400 bg-red-500/10 px-3 py-2 rounded-lg">
+                    {replyMutation.data.error || "Не удалось отправить"}
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <Textarea
+                    placeholder="Написать ответ..."
+                    value={replyText}
+                    onChange={(e) => setReplyText(e.target.value)}
+                    className="min-h-[60px] max-h-[120px] bg-zinc-800 border-zinc-700 resize-none"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                        e.preventDefault()
+                        handleSendReply()
+                      }
+                    }}
+                  />
+                  <Button
+                    onClick={handleSendReply}
+                    disabled={!replyText.trim() || replyMutation.isPending}
+                    className="shrink-0 bg-indigo-600 hover:bg-indigo-700 self-end"
+                  >
+                    {replyMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Send className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
                 <div className="flex flex-wrap items-center gap-3 text-xs text-zinc-500">
-                  {threadData?.thread && threadData.thread.length > 0 && (
-                    <div className="flex items-center gap-1.5 text-zinc-400">
-                      <Mail className="h-3.5 w-3.5" />
-                      <span>{threadData.thread.length} сообщений</span>
-                    </div>
-                  )}
-                  {selectedThread.has_reply && (
-                    <div className="flex items-center gap-1.5 text-amber-400">
-                      <MessageSquare className="h-3.5 w-3.5" />
-                      <span>Есть ответ</span>
-                    </div>
-                  )}
+                  <span className="text-zinc-600">От: Владислав Наков</span>
+                  <span className="text-zinc-700">•</span>
+                  <span className="text-zinc-600">Ctrl+Enter для отправки</span>
                   <Link
                     href={`/leads/${selectedThread.lead_id}`}
                     className="ml-auto text-indigo-400 hover:text-indigo-300 flex items-center gap-1"

@@ -134,6 +134,23 @@ class PreviewEmailResponse(BaseModel):
     quality_check: dict[str, Any]
 
 
+class ReplyRequest(BaseModel):
+    """Manager reply request."""
+
+    lead_id: str
+    body: str = Field(..., min_length=1, description="Reply message body (plain text or HTML)")
+
+
+class ReplyResponse(BaseModel):
+    """Reply response."""
+
+    success: bool
+    email_id: str | None = None
+    message_id: str | None = None
+    sent_at: datetime | None = None
+    error: str | None = None
+
+
 class TestEmailRequest(BaseModel):
     """Test email request - for manual testing without lead."""
 
@@ -335,6 +352,141 @@ async def list_threads(
             limit=limit,
             pages=pages,
         )
+
+
+@router.post("/reply", response_model=ReplyResponse)
+async def send_manager_reply(request: ReplyRequest) -> ReplyResponse:
+    """Send a manual reply from manager to a lead.
+
+    The email is sent from Владислав Наков <team@otclick-hr.ru>.
+    Client sees no difference between AI and manager responses.
+
+    Args:
+        request: Reply request with lead_id and body
+
+    Returns:
+        Reply result with email_id and message_id
+    """
+    from uuid import UUID
+
+    from sqlalchemy import select
+
+    from app.email.delivery import EmailDelivery
+    from app.models.db import EmailMessageDB, EmailSequenceDB, EmployerContactDB, EmployerLeadDB
+
+    async with async_session_factory() as db:
+        # Get lead
+        try:
+            lead_uuid = UUID(request.lead_id)
+        except ValueError:
+            return ReplyResponse(success=False, error=f"Invalid lead_id: {request.lead_id}")
+
+        lead_result = await db.execute(
+            select(EmployerLeadDB).where(EmployerLeadDB.id == lead_uuid)
+        )
+        lead = lead_result.scalar_one_or_none()
+        if not lead:
+            return ReplyResponse(success=False, error=f"Lead {request.lead_id} not found")
+
+        # Get last email to this lead (for subject and contact)
+        last_email_result = await db.execute(
+            select(EmailMessageDB)
+            .where(EmailMessageDB.lead_id == lead_uuid)
+            .order_by(EmailMessageDB.sent_at.desc().nullslast())
+            .limit(1)
+        )
+        last_email = last_email_result.scalar_one_or_none()
+        if not last_email:
+            return ReplyResponse(success=False, error="No previous emails found for this lead")
+
+        # Get contact
+        contact_result = await db.execute(
+            select(EmployerContactDB).where(EmployerContactDB.id == last_email.contact_id)
+        )
+        contact = contact_result.scalar_one_or_none()
+        if not contact or not contact.email:
+            return ReplyResponse(success=False, error="Contact email not found")
+
+        # Build subject as Re: original
+        original_subject = last_email.subject
+        if not original_subject.startswith("Re:"):
+            subject = f"Re: {original_subject}"
+        else:
+            subject = original_subject
+
+        # Send email from manager
+        delivery = EmailDelivery(from_name="Владислав Наков")
+
+        try:
+            msg = delivery._build_mime_message(
+                to_email=contact.email,
+                to_name=contact.full_name,
+                subject=subject,
+                body=request.body,
+                unsubscribe_url=None,
+            )
+
+            message_id = msg["Message-ID"]
+            delivery._send_smtp(msg, contact.email)
+            sent_at = datetime.now(UTC)
+
+            # Save to database
+            # Get or create sequence
+            seq_result = await db.execute(
+                select(EmailSequenceDB).where(
+                    EmailSequenceDB.lead_id == lead_uuid,
+                    EmailSequenceDB.contact_id == contact.id,
+                    EmailSequenceDB.is_active == True,
+                )
+            )
+            sequence = seq_result.scalar_one_or_none()
+
+            if not sequence:
+                # Create new sequence
+                from uuid import uuid4
+                sequence = EmailSequenceDB(
+                    id=uuid4(),
+                    lead_id=lead_uuid,
+                    contact_id=contact.id,
+                    current_step=0,
+                    is_active=True,
+                )
+                db.add(sequence)
+                await db.flush()
+
+            # Get next step number
+            from sqlalchemy import func
+            step_result = await db.execute(
+                select(func.coalesce(func.max(EmailMessageDB.step_number), 0))
+                .where(EmailMessageDB.sequence_id == sequence.id)
+            )
+            max_step = step_result.scalar_one()
+
+            # Create email record
+            email_msg = EmailMessageDB(
+                sequence_id=sequence.id,
+                lead_id=lead_uuid,
+                contact_id=contact.id,
+                email_type="manager_reply",
+                subject=subject,
+                body=request.body,
+                step_number=max_step + 1,
+                sent_at=sent_at,
+                message_id_header=message_id,
+                delivered=True,
+            )
+            db.add(email_msg)
+            await db.commit()
+
+            return ReplyResponse(
+                success=True,
+                email_id=str(email_msg.id),
+                message_id=message_id,
+                sent_at=sent_at,
+            )
+
+        except Exception as e:
+            return ReplyResponse(success=False, error=str(e))
 
 
 @router.get("", response_model=EmailListResponse)
